@@ -8,6 +8,7 @@ class User(Base):
     __tablename__ = "users"
 
     address = Column(String, primary_key=True, index=True) # Ethereum address (lowercase)
+    username = Column(String, nullable=True)
     encryption_public_key = Column(String, nullable=True) # For eth_decrypt
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

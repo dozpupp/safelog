@@ -13,8 +13,10 @@ export default function Login() {
         try {
             await login();
         } catch (err) {
-            console.error(err);
-            setError("Failed to login. Please try again.");
+            console.error("Login error:", err);
+            console.error("Error message:", err.message);
+            console.error("Error stack:", err.stack);
+            setError(`Failed to login: ${err.message || 'Please try again.'}`);
         } finally {
             setLoading(false);
         }

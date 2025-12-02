@@ -72,11 +72,25 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     
     return user
 
-@app.put("/users/me/public-key")
-def update_public_key(public_key: str, address: str, db: Session = Depends(get_db)):
+@app.put("/users/{address}", response_model=schemas.UserResponse)
+def update_user(address: str, user_update: schemas.UserUpdate, db: Session = Depends(get_db)):
     # In a real app, we'd need to authenticate this request with a token/session.
     # For this MVP, we'll accept the address param but this is insecure.
     # TODO: Add JWT or session middleware.
+    user = db.query(models.User).filter(models.User.address == address.lower()).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user_update.username is not None:
+        user.username = user_update.username
+        
+    db.commit()
+    db.refresh(user)
+    return user
+
+@app.put("/users/me/public-key")
+def update_public_key(public_key: str, address: str, db: Session = Depends(get_db)):
+    # Keeping this for backward compatibility if needed, but we can also use the new endpoint
     user = db.query(models.User).filter(models.User.address == address.lower()).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -91,6 +105,19 @@ def get_user(address: str, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+@app.get("/users", response_model=List[schemas.UserResponse])
+def list_users(search: str = None, limit: int = 5, db: Session = Depends(get_db)):
+    query = db.query(models.User)
+    
+    if search:
+        search_pattern = f"%{search.lower()}%"
+        query = query.filter(
+            (models.User.address.like(search_pattern)) | 
+            (models.User.username.like(search_pattern))
+        )
+    
+    return query.limit(limit).all()
 
 @app.post("/secrets", response_model=schemas.SecretResponse)
 def create_secret(secret: schemas.SecretCreate, owner_address: str, db: Session = Depends(get_db)):

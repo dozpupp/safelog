@@ -8,7 +8,11 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     encryption_public_key: str
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+
 class UserResponse(UserBase):
+    username: Optional[str]
     encryption_public_key: Optional[str]
     created_at: datetime
 

@@ -97,7 +97,8 @@ export const Web3Provider = ({ children }) => {
             isAuthenticated,
             user,
             connect: connectWallet,
-            login
+            login,
+            setUser
         }}>
             {children}
         </Web3Context.Provider>
