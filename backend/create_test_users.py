@@ -1,7 +1,7 @@
 from database import SessionLocal, engine
 import models
 
-models.Base.metadata.create_all(bind=engine)
+# models.Base.metadata.create_all(bind=engine)  # Moved to create_database.py
 
 db = SessionLocal()
 

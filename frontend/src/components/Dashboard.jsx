@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useWeb3 } from '../context/Web3Context';
 import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypto';
 import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search } from 'lucide-react';
+import API_ENDPOINTS from '../config';
 
 export default function Dashboard() {
     const { user, encryptionPublicKey, currentAccount, setUser } = useWeb3();
@@ -34,7 +35,7 @@ export default function Dashboard() {
     const fetchSecrets = async () => {
         if (!user) return;
         try {
-            const res = await fetch(`http://localhost:8000/secrets/${user.address}`);
+            const res = await fetch(API_ENDPOINTS.SECRETS.LIST(user.address));
             const data = await res.json();
             setSecrets(data);
         } catch (error) {
@@ -47,7 +48,7 @@ export default function Dashboard() {
     const fetchSharedSecrets = async () => {
         if (!user) return;
         try {
-            const res = await fetch(`http://localhost:8000/secrets/shared-with/${user.address}`);
+            const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH(user.address));
             const data = await res.json();
             setSharedSecrets(data);
         } catch (error) {
@@ -58,8 +59,8 @@ export default function Dashboard() {
     const searchUsers = async (query) => {
         try {
             const url = query
-                ? `http://localhost:8000/users?search=${encodeURIComponent(query)}&limit=5`
-                : `http://localhost:8000/users?limit=5`;
+                ? `${API_ENDPOINTS.USERS.LIST}?search=${encodeURIComponent(query)}&limit=5`
+                : `${API_ENDPOINTS.USERS.LIST}?limit=5`;
             const res = await fetch(url);
             const data = await res.json();
             // Filter out current user
@@ -88,7 +89,7 @@ export default function Dashboard() {
             const reEncrypted = encryptData(decrypted, selectedUser.encryption_public_key);
 
             // 3. Share via API
-            const res = await fetch('http://localhost:8000/secrets/share', {
+            const res = await fetch(API_ENDPOINTS.SECRETS.SHARE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -128,7 +129,7 @@ export default function Dashboard() {
 
             const encrypted = encryptData(newSecretContent, encryptionPublicKey);
 
-            const res = await fetch('http://localhost:8000/secrets', {
+            const res = await fetch(API_ENDPOINTS.SECRETS.CREATE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -147,7 +148,7 @@ export default function Dashboard() {
 
             // So we need to call POST /secrets?owner_address=...
 
-            const createRes = await fetch(`http://localhost:8000/secrets?owner_address=${user.address}`, {
+            const createRes = await fetch(`${API_ENDPOINTS.SECRETS.CREATE}?owner_address=${user.address}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -183,7 +184,7 @@ export default function Dashboard() {
     const handleUpdateProfile = async (e) => {
         e.preventDefault();
         try {
-            const res = await fetch(`http://localhost:8000/users/${user.address}`, {
+            const res = await fetch(API_ENDPOINTS.USERS.UPDATE(user.address), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

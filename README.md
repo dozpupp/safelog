@@ -8,6 +8,8 @@ A secure secret management and document signing application using MetaMask for a
 - 🔒 **Client-Side Encryption** - Secrets encrypted with your MetaMask encryption keys
 - 💾 **Secure Storage** - Encrypted data stored server-side
 - 🔓 **On-Demand Decryption** - Decrypt secrets only when needed via MetaMask
+- 🤝 **Secret Sharing** - Share encrypted secrets with other users securely
+- 👤 **User Profiles** - Manage your username and profile
 - 🎨 **Modern UI** - Dark-themed interface with TailwindCSS
 - 📝 **Document Signing** - Sign documents with your wallet (backend ready)
 
@@ -48,11 +50,33 @@ A secure secret management and document signing application using MetaMask for a
    pip3 install -r requirements.txt
    ```
 
-3. **Setup Frontend**
+3. **Initialize Database**
+   Before running the backend for the first time, initialize the database:
+   ```bash
+   # This script creates the SQLite database and necessary tables
+   python3 create_database.py
+   ```
+
+4. **Create Test Users (Optional)**
+   If you want to populate the database with test users for development:
+   ```bash
+   python3 create_test_users.py
+   ```
+
+5. **Setup Frontend**
    ```bash
    cd frontend
    npm install
    ```
+
+### Configuration
+
+The frontend API configuration is located in `frontend/src/config.js`. You can modify the `API_BASE_URL` if your backend is running on a different host or port.
+
+```javascript
+// frontend/src/config.js
+const API_BASE_URL = 'http://localhost:8000';
+```
 
 ### Running the Application
 
@@ -84,6 +108,12 @@ A secure secret management and document signing application using MetaMask for a
 3. Click "Encrypt & Save"
 4. Secret is encrypted client-side and stored
 
+### Share a Secret
+1. Click the Share icon on a secret
+2. Search for a user by username or address
+3. Select the user and click "Share"
+4. The secret is securely re-encrypted for the recipient
+
 ### View a Secret
 1. Click the unlock 🔓 button
 2. Approve decryption in MetaMask
@@ -112,6 +142,7 @@ safelog/
     │   ├── components/   # React components
     │   ├── context/      # Web3 context
     │   ├── utils/        # Crypto utilities
+    │   ├── config.js     # API configuration
     │   └── App.jsx
     ├── package.json
     └── vite.config.js
@@ -123,7 +154,11 @@ safelog/
 - `POST /auth/login` - Authenticate with signature
 - `POST /secrets` - Create encrypted secret
 - `GET /secrets/{address}` - List user's secrets
+- `POST /secrets/share` - Share secret with another user
+- `GET /secrets/shared-with/{address}` - List secrets shared with user
+- `GET /users` - Search users
 - `GET /users/{address}` - Get user details
+- `PUT /users/{address}` - Update user profile
 
 ## Development
 
@@ -141,7 +176,8 @@ npm run dev
 
 ## Future Enhancements
 
-- [ ] Secret sharing with other users
+- [x] Secret sharing with other users
+- [x] User profiles
 - [ ] Document signing UI
 - [ ] Session management with JWT
 - [ ] PostgreSQL support

@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
+import API_ENDPOINTS from '../config';
 import { connectWallet, getEncryptionPublicKey, signMessage } from '../utils/crypto';
 
 const Web3Context = createContext();
@@ -49,7 +50,7 @@ export const Web3Provider = ({ children }) => {
         }
 
         // 1. Get Nonce
-        const nonceRes = await fetch(`http://localhost:8000/auth/nonce/${account}`);
+        const nonceRes = await fetch(API_ENDPOINTS.AUTH.NONCE(account));
         const { nonce } = await nonceRes.json();
 
         // 2. Sign Nonce
@@ -69,7 +70,7 @@ export const Web3Provider = ({ children }) => {
         }
 
         // 4. Verify on Backend
-        const loginRes = await fetch('http://localhost:8000/auth/login', {
+        const loginRes = await fetch(API_ENDPOINTS.AUTH.LOGIN, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
