@@ -154,6 +154,15 @@ def share_secret(grant: schemas.AccessGrantCreate, db: Session = Depends(get_db)
     if not grantee:
         raise HTTPException(status_code=404, detail="Grantee not found")
 
+    # Check if already shared
+    existing_grant = db.query(models.AccessGrant).filter(
+        models.AccessGrant.secret_id == grant.secret_id,
+        models.AccessGrant.grantee_address == grant.grantee_address.lower()
+    ).first()
+    
+    if existing_grant:
+        raise HTTPException(status_code=400, detail="Secret already shared with this user")
+
     new_grant = models.AccessGrant(
         secret_id=grant.secret_id,
         grantee_address=grant.grantee_address.lower(),

@@ -30,6 +30,7 @@ class SecretResponse(SecretBase):
     id: int
     owner_address: str
     created_at: datetime
+    owner: UserResponse
 
     class Config:
         orm_mode = True
@@ -45,6 +46,7 @@ class AccessGrantResponse(BaseModel):
     grantee_address: str
     encrypted_key: str
     created_at: datetime
+    secret: SecretResponse
 
     class Config:
         orm_mode = True

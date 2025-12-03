@@ -104,7 +104,8 @@ export default function Dashboard() {
                 setSecretToShare(null);
                 setSelectedUser(null);
             } else {
-                alert('Failed to share secret');
+                const errorData = await res.json();
+                alert(`Failed to share secret: ${errorData.detail || 'Unknown error'}`);
             }
         } catch (error) {
             console.error("Failed to share secret", error);
@@ -167,13 +168,15 @@ export default function Dashboard() {
         }
     };
 
-    const handleDecrypt = async (secret) => {
+    const handleDecrypt = async (item, isShared = false) => {
         try {
-            const decrypted = await decryptData(secret.encrypted_data, currentAccount);
-            setDecryptedSecrets(prev => ({ ...prev, [secret.id]: decrypted }));
+            const dataToDecrypt = isShared ? item.encrypted_key : item.encrypted_data;
+            const decrypted = await decryptData(dataToDecrypt, currentAccount);
+            const key = isShared ? `shared_${item.id}` : item.id;
+            setDecryptedSecrets(prev => ({ ...prev, [key]: decrypted }));
         } catch (error) {
             console.error("Decryption failed", error);
-            alert("Decryption failed. Ensure you are the owner.");
+            alert("Decryption failed. Ensure you have the right key.");
         }
     };
 
@@ -335,8 +338,8 @@ export default function Dashboard() {
                                             key={u.address}
                                             onClick={() => setSelectedUser(u)}
                                             className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedUser?.address === u.address
-                                                    ? 'bg-indigo-500/20 border-indigo-500'
-                                                    : 'bg-slate-800 border-slate-700 hover:border-slate-600'
+                                                ? 'bg-indigo-500/20 border-indigo-500'
+                                                : 'bg-slate-800 border-slate-700 hover:border-slate-600'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-2">
@@ -477,6 +480,64 @@ export default function Dashboard() {
                         </div>
                     )
                 }
+
+                <div className="mt-12 mb-6">
+                    <h2 className="text-xl font-semibold text-white">Shared with You</h2>
+                </div>
+
+                {loading ? (
+                    <div className="flex justify-center py-12">
+                        <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
+                    </div>
+                ) : sharedSecrets.length === 0 ? (
+                    <div className="text-center py-12 border border-dashed border-slate-800 rounded-xl">
+                        <p className="text-slate-500">No secrets shared with you yet.</p>
+                    </div>
+                ) : (
+                    <div className="grid gap-4">
+                        {sharedSecrets.map(grant => (
+                            <div key={`shared-${grant.id}`} className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex items-start justify-between group hover:border-slate-700 transition-all">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="p-2 bg-slate-800 rounded-lg">
+                                            <FileText className="w-4 h-4 text-indigo-400" />
+                                        </div>
+                                        <h3 className="font-medium text-white">{grant.secret?.name || 'Unknown Secret'}</h3>
+                                        <span className="text-xs text-slate-500">
+                                            {new Date(grant.created_at).toLocaleDateString()}
+                                        </span>
+                                        <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-xs rounded-full">
+                                            Shared by {grant.secret?.owner?.username || grant.secret?.owner?.address?.slice(0, 6) + '...'}
+                                        </span>
+                                    </div>
+
+                                    {decryptedSecrets[`shared_${grant.id}`] ? (
+                                        <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-200 font-mono text-sm break-all">
+                                            {decryptedSecrets[`shared_${grant.id}`]}
+                                        </div>
+                                    ) : (
+                                        <div className="mt-3 text-sm text-slate-500 italic flex items-center gap-2">
+                                            <Lock className="w-3 h-3" />
+                                            Encrypted Content
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center gap-2 ml-4">
+                                    {!decryptedSecrets[`shared_${grant.id}`] && (
+                                        <button
+                                            onClick={() => handleDecrypt(grant, true)}
+                                            className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                            title="Decrypt"
+                                        >
+                                            <Unlock className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </main >
         </div >
     );
