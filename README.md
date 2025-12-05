@@ -71,28 +71,58 @@ A secure secret management and document signing application using MetaMask for a
 
 ### Configuration
 
-The frontend API configuration is located in `frontend/src/config.js`. You can modify the `API_BASE_URL` if your backend is running on a different host or port.
+The frontend API URL can be configured using environment variables.
 
-```javascript
-// frontend/src/config.js
-const API_BASE_URL = 'http://localhost:8000';
-```
-
-### Running the Application
-
-1. **Start Backend** (in `backend/` directory)
+1. Copy the example environment file:
    ```bash
-   python3 -m uvicorn main:app --reload --port 8000
+   cd frontend
+   cp .env.example .env
    ```
 
-2. **Start Frontend** (in `frontend/` directory)
-   ```bash
-   npm run dev
+2. Edit `.env` and set your backend URL:
+   ```
+   VITE_API_BASE_URL=http://your-backend-host:8000
    ```
 
-3. **Access the application**
-   - Open http://localhost:5173 in your browser
-   - Make sure MetaMask is installed
+   *If not set, it defaults to `http://localhost:8000`.*
+
+### Running on a Remote Server
+
+If you are running the frontend on a remote server (e.g., a VPS) and want to access it from your local browser:
+
+1. **Configure Backend URL**:
+   Edit `.env` and set `VITE_API_BASE_URL` to the public IP or domain of your backend.
+   ```
+   VITE_API_BASE_URL=http://your-server-ip:8000
+   ```
+
+2. **Run with Host Exposure**:
+   By default, Vite only listens on localhost. To access it externally, run:
+   ```bash
+   npm run dev -- --host
+   ```
+   This will listen on `0.0.0.0`, allowing access via `http://your-server-ip:5173`.
+
+### Production Build
+
+For production deployment:
+
+1. **Set Environment Variable**:
+   ```bash
+   export VITE_API_BASE_URL=https://api.yourdomain.com
+   ```
+
+2. **Build the Application**:
+   ```bash
+   npm run build
+   ```
+   This creates a `dist/` folder with static files.
+
+3. **Serve the Application**:
+   You can serve the `dist/` folder using Nginx, Apache, or a static file server like `serve`:
+   ```bash
+   npx serve -s dist
+   ```
 
 ## Usage
 
