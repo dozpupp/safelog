@@ -119,6 +119,12 @@ TrustKeys is being developed as a core security module for **SafeLog**.
 - **Current**: Standalone Browser Extension (Proof of Concept).
 - **Phase 2**: Integration with SafeLog Web App.
 
+### 🛠️ Ongoing Development / To-Do
+- [ ] **Export Keys**: Allow exporting private keys (encrypted JSON).
+  - *Must require password validation.*
+  - *Must display strict security warnings to User.*
+- [ ] **Import Keys**: Restore accounts from exported JSON files.
+
 ---
 
 ## ⚠️ Disclaimer
