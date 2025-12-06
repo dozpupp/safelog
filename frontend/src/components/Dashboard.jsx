@@ -1,11 +1,55 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useWeb3 } from '../context/Web3Context';
+import { usePQC } from '../context/PQCContext';
 import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypto';
 import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search } from 'lucide-react';
 import API_ENDPOINTS from '../config';
 
+const DisplayField = ({ label, value }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+        if (!value) return;
+        navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    // Force truncation logic
+    const shouldTruncate = value && value.length > 20;
+    const displayValue = shouldTruncate
+        ? `${value.substring(0, 8)}...${value.substring(value.length - 8)}`
+        : value;
+
+    return (
+        <div>
+            <label className="block text-sm font-medium text-slate-400 mb-1">{label}</label>
+            <div className="flex gap-2">
+                <div className="flex-1 bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-2 text-slate-500 font-mono text-xs break-all flex items-center">
+                    {displayValue || "Not set"}
+                </div>
+                <button
+                    type="button"
+                    onClick={handleCopy}
+                    className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+                    title="Copy to clipboard"
+                >
+                    {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                </button>
+            </div>
+        </div>
+    );
+};
+
 export default function Dashboard() {
-    const { user, encryptionPublicKey, currentAccount, setUser } = useWeb3();
+    const { user, setUser, authType } = useAuth();
+    const { currentAccount, encryptionPublicKey: ethKey } = useWeb3();
+    const { kyberKey, encrypt: encryptPQC, decrypt: decryptPQC } = usePQC();
+
+    // Unify state based on Auth Type
+    const encryptionPublicKey = authType === 'trustkeys' ? kyberKey : ethKey;
+
     const [secrets, setSecrets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [newSecretName, setNewSecretName] = useState('');
@@ -78,15 +122,59 @@ export default function Dashboard() {
         await searchUsers('');
     };
 
+    // Helper to decrypt any secret (Standard or PQC)
+    const secureDecrypt = async (encryptedString) => {
+        try {
+            // Try parsing as JSON to detect PQC format
+            const parsed = JSON.parse(encryptedString);
+
+            // Check for TrustKeys (PQC) format: { kem, iv, content }
+            if (parsed.kem && parsed.iv && parsed.content && authType === 'trustkeys') {
+                return await decryptPQC(parsed);
+            }
+
+            // Fallback to MetaMask decryption
+            return decryptData(encryptedString, currentAccount);
+        } catch (e) {
+            // If parse fails or other error, try standard decrypt
+            return decryptData(encryptedString, currentAccount);
+        }
+    };
+
     const handleShareSecret = async () => {
         if (!selectedUser || !secretToShare) return;
 
         try {
-            // 1. Decrypt the secret first
-            const decrypted = await decryptData(secretToShare.encrypted_data, currentAccount);
+            // 1. Decrypt the secret first (Smart Decrypt)
+            const encryptedSource = secretToShare.encrypted_data; // Original owner's data
+            // NOTE: If we are sharing a "Shared Secret" (re-sharing), logic might be different?
+            // For now, let's assume we are the owner sharing our own secret.
+
+            const decrypted = await secureDecrypt(encryptedSource);
 
             // 2. Re-encrypt with recipient's public key
-            const reEncrypted = encryptData(decrypted, selectedUser.encryption_public_key);
+            let reEncrypted;
+            const recipientKey = selectedUser.encryption_public_key;
+
+            if (recipientKey && recipientKey.length > 60) {
+                // Assume PQC Key (Dilithium/Kyber keys are long)
+                // Note: We use the hook here, assuming we are logged in as PQC user to share?
+                // Actually, if we are sharing TO a PQC user, we need to use PQC encrypt even if we are standard user?
+                // No, only PQC users have the TrustKeys extension typically. 
+                // But mixed usage is complex. Let's assume if target is PQC, we try to use encryptPQC.
+                try {
+                    const res = await encryptPQC(decrypted, recipientKey);
+                    reEncrypted = JSON.stringify(res);
+                } catch (e) {
+                    // If we are not PQC user but try to share to PQC, we might need window.trustkeys if available?
+                    // Or logic dictates we must be PQC to share to PQC?
+                    // For now, let's stick to using the context which wraps the window check.
+                    throw new Error("TrustKeys required to share with this user.");
+                }
+            } else {
+                // Standard MetaMask Encryption
+                reEncrypted = encryptData(decrypted, recipientKey);
+            }
 
             // 3. Share via API
             const res = await fetch(API_ENDPOINTS.SECRETS.SHARE, {
@@ -119,34 +207,20 @@ export default function Dashboard() {
         if (!newSecretName || !newSecretContent) return;
 
         try {
-            // Encrypt content
-            // We need the public key. If we don't have it in context, we might need to ask again or fail.
-            // Ideally we got it during login.
             if (!encryptionPublicKey) {
                 alert("Encryption public key missing. Please reconnect.");
                 return;
             }
 
-            const encrypted = encryptData(newSecretContent, encryptionPublicKey);
-
-            const res = await fetch(API_ENDPOINTS.SECRETS.CREATE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: newSecretName,
-                    encrypted_data: encrypted
-                })
-            }, {
-                // We need to pass owner_address param? No, the schema says body is SecretCreate.
-                // Wait, the endpoint is: create_secret(secret: schemas.SecretCreate, owner_address: str, ...)
-                // So we need to pass owner_address as query param!
-            });
-
-            // Wait, let's check the endpoint definition in main.py
-            // @app.post("/secrets", response_model=schemas.SecretResponse)
-            // def create_secret(secret: schemas.SecretCreate, owner_address: str, db: Session = Depends(get_db)):
-
-            // So we need to call POST /secrets?owner_address=...
+            let encrypted;
+            if (authType === 'trustkeys') {
+                // PQC Encryption
+                const res = await encryptPQC(newSecretContent, encryptionPublicKey);
+                encrypted = JSON.stringify(res);
+            } else {
+                // Standard Encryption
+                encrypted = encryptData(newSecretContent, encryptionPublicKey);
+            }
 
             const createRes = await fetch(`${API_ENDPOINTS.SECRETS.CREATE}?owner_address=${user.address}`, {
                 method: 'POST',
@@ -172,7 +246,8 @@ export default function Dashboard() {
     const handleDecrypt = async (item, isShared = false) => {
         try {
             const dataToDecrypt = isShared ? item.encrypted_key : item.encrypted_data;
-            const decrypted = await decryptData(dataToDecrypt, currentAccount);
+            const decrypted = await secureDecrypt(dataToDecrypt);
+
             const key = isShared ? `shared_${item.id}` : item.id;
             setDecryptedSecrets(prev => ({ ...prev, [key]: decrypted }));
         } catch (error) {
@@ -264,19 +339,15 @@ export default function Dashboard() {
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-400 mb-1">Wallet Address</label>
-                                        <div className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-2 text-slate-500 font-mono text-xs break-all">
-                                            {user?.address}
-                                        </div>
-                                    </div>
+                                    <DisplayField
+                                        label={authType === 'trustkeys' ? "ML-DSA (Dilithium) / User ID" : "Wallet Address"}
+                                        value={user?.address}
+                                    />
 
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-400 mb-1">Public Key</label>
-                                        <div className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-2 text-slate-500 font-mono text-xs break-all">
-                                            {user?.encryption_public_key || "Not set"}
-                                        </div>
-                                    </div>
+                                    <DisplayField
+                                        label={authType === 'trustkeys' ? "ML-KEM (Kyber) / Encryption Key" : "Public Key"}
+                                        value={user?.encryption_public_key}
+                                    />
 
                                     <div className="flex justify-end gap-3 mt-6">
                                         <button

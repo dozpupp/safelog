@@ -6,6 +6,8 @@ from typing import List
 from database import engine, get_db, Base
 import models, schemas, auth
 
+import os
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 
@@ -15,8 +17,12 @@ app = FastAPI()
 origins = [
     "http://localhost:5173", # Vite default port
     "http://127.0.0.1:5173",
-    "https://safelog.hashpar.com",
 ]
+
+# Add allowed origins from environment variable
+env_origins = os.getenv("ALLOWED_ORIGINS")
+if env_origins:
+    origins.extend([origin.strip() for origin in env_origins.split(",")])
 
 app.add_middleware(
     CORSMiddleware,

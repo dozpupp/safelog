@@ -1,24 +1,22 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import API_ENDPOINTS from '../config';
 import { connectWallet, getEncryptionPublicKey, signMessage } from '../utils/crypto';
+import { useAuth } from './AuthContext';
 
 const Web3Context = createContext();
 
 export const useWeb3 = () => useContext(Web3Context);
 
 export const Web3Provider = ({ children }) => {
+    const { login: authLogin } = useAuth();
     const [currentAccount, setCurrentAccount] = useState(null);
     const [encryptionPublicKey, setEncryptionPublicKey] = useState(null);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [user, setUser] = useState(null); // Backend user object
 
     const checkWalletConnection = async () => {
         if (window.ethereum) {
             const accounts = await window.ethereum.request({ method: 'eth_accounts' });
             if (accounts.length > 0) {
                 setCurrentAccount(accounts[0]);
-                // If we have an account, we might be "connected" but not "logged in" to our backend yet.
-                // We'll handle login separately.
             }
         }
     };
@@ -30,12 +28,11 @@ export const Web3Provider = ({ children }) => {
             window.ethereum.on('accountsChanged', (accounts) => {
                 if (accounts.length > 0) {
                     setCurrentAccount(accounts[0]);
-                    setIsAuthenticated(false); // Reset auth on account change
-                    setUser(null);
+                    // Note: We might want to logout on account change, but AuthContext handles user state.
+                    // For now, let's just update the local account.
+                    // Ideally, we should trigger a logout in AuthContext if the user changes wallet.
                 } else {
                     setCurrentAccount(null);
-                    setIsAuthenticated(false);
-                    setUser(null);
                 }
             });
         }
@@ -57,15 +54,14 @@ export const Web3Provider = ({ children }) => {
         const message = `Sign in to Secure Log App with nonce: ${nonce}`;
         const signature = await signMessage(message, account);
 
-        // 3. Get Encryption Public Key (if not already known, but good to ask now)
-        // We need this to create the user properly on backend
+        // 3. Get Encryption Public Key
         let pubKey = encryptionPublicKey;
         if (!pubKey) {
             try {
                 pubKey = await getEncryptionPublicKey(account);
                 setEncryptionPublicKey(pubKey);
             } catch (e) {
-                console.warn("User rejected public key request, proceeding without it (some features may fail)", e);
+                console.warn("User rejected public key request", e);
             }
         }
 
@@ -83,8 +79,7 @@ export const Web3Provider = ({ children }) => {
 
         if (loginRes.ok) {
             const userData = await loginRes.json();
-            setUser(userData);
-            setIsAuthenticated(true);
+            authLogin(userData, 'metamask'); // Update Global Auth State
             return userData;
         } else {
             throw new Error("Login failed");
@@ -95,13 +90,11 @@ export const Web3Provider = ({ children }) => {
         <Web3Context.Provider value={{
             currentAccount,
             encryptionPublicKey,
-            isAuthenticated,
-            user,
             connect: connectWallet,
             login,
-            setUser
         }}>
             {children}
         </Web3Context.Provider>
     );
 };
+

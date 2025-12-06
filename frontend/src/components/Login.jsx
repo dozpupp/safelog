@@ -1,24 +1,31 @@
 import React, { useState } from 'react';
 import { useWeb3 } from '../context/Web3Context';
+import { usePQC } from '../context/PQCContext';
 import { Shield, Wallet, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function Login() {
     const { login } = useWeb3();
+    const { loginTrustKeys } = usePQC();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [activeMethod, setActiveMethod] = useState(null);
 
-    const handleLogin = async () => {
+    const handleLogin = async (method) => {
         setLoading(true);
+        setActiveMethod(method);
         setError(null);
         try {
-            await login();
+            if (method === 'trustkeys') {
+                await loginTrustKeys();
+            } else {
+                await login();
+            }
         } catch (err) {
             console.error("Login error:", err);
-            console.error("Error message:", err.message);
-            console.error("Error stack:", err.stack);
             setError(`Failed to login: ${err.message || 'Please try again.'}`);
         } finally {
             setLoading(false);
+            setActiveMethod(null);
         }
     };
 
@@ -42,16 +49,32 @@ export default function Login() {
                 )}
 
                 <button
-                    onClick={handleLogin}
+                    onClick={() => handleLogin('metamask')}
                     disabled={loading}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group mb-4"
                 >
-                    {loading ? (
+                    {loading && activeMethod === 'metamask' ? (
                         <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
                         <>
                             <Wallet className="w-5 h-5" />
-                            <span>Connect Wallet</span>
+                            <span>Connect with MetaMask</span>
+                            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                        </>
+                    )}
+                </button>
+
+                <button
+                    onClick={() => handleLogin('trustkeys')}
+                    disabled={loading}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
+                >
+                    {loading && activeMethod === 'trustkeys' ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                        <>
+                            <Shield className="w-5 h-5" />
+                            <span>Connect with TrustKeys (PQC)</span>
                             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                         </>
                     )}
