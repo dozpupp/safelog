@@ -160,7 +160,7 @@ For production deployment:
 - **No Plain Text Storage** - All secrets are encrypted before leaving your browser
 - **Private Keys Never Exposed** - Encryption/decryption happens via MetaMask
 - **Client-Side Encryption** - Server never sees your plain text data
-- **Signature-Based Auth** - No passwords, uses Ethereum signatures
+- **Signature-Based Auth** - No passwords, uses cryptographic signatures
 
 ## Project Structure
 
