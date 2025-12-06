@@ -142,10 +142,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     break;
                 }
                 case 'CONNECT': {
-                    console.log("Received CONNECT request from", request.origin || sender.url);
-
                     if (state.isLocked) {
-                        console.log("Vault locked. Launching popup for login.");
                         // Launch popup to prompt login (no specific route, just open)
                         await launchPopup();
                         sendResponse({ success: false, error: "Locked - Please unlock extension" });
@@ -154,25 +151,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                     const origin = request.origin;
                     if (state.vault.permissions[origin]) {
-                        console.log("Origin already authorized:", origin);
                         sendResponse({ success: true });
                         break;
                     }
 
                     // Request Approval
                     const reqId = Math.random().toString(36).substr(2, 9);
-                    console.log("Creating pending request:", reqId);
 
                     pendingRequests.set(reqId, {
                         resolve: () => {
                             // On approve
-                            console.log("Request approved:", reqId);
                             state.vault.permissions[origin] = true;
                             saveVault(sessionPassword);
                             sendResponse({ success: true });
                         },
                         reject: (err) => {
-                            console.log("Request rejected:", reqId, err);
                             sendResponse({ success: false, error: err || "Rejected" });
                         },
                         type: 'CONNECT',

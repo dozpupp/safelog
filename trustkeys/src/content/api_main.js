@@ -1,4 +1,4 @@
-console.log("[TrustKeys] API script loading in MAIN world...");
+
 
 // Helper for postMessage
 window.postMessagePromise = (data) => {
@@ -46,4 +46,4 @@ window.trustkeys = {
 
 // Freeze to prevent modification
 Object.freeze(window.trustkeys);
-console.log("[TrustKeys] API injected successfully.");
+

@@ -1,4 +1,4 @@
-console.log("TrustKeys content script loaded");
+
 
 const callBackground = (type, payload) => {
     return new Promise((resolve, reject) => {
@@ -16,7 +16,7 @@ const callBackground = (type, payload) => {
     });
 };
 
-console.log("[TrustKeys] Content script (Isolated) loaded");
+
 
 // No script injection needed anymore, managed by Manifest V3 "world" property.
 
