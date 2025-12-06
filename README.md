@@ -11,6 +11,8 @@ A secure secret management and document signing application using MetaMask for a
 - 🤝 **Secret Sharing** - Share encrypted secrets with other users securely
 - 👤 **User Profiles** - Manage your username and profile
 - 🎨 **Modern UI** - Dark-themed interface with TailwindCSS
+- 🤖 **TrustKeys Module** - **[Experimental]** Post-Quantum Cryptography (PQC) integration
+- 🔒 **Quantum-Proof Security** - ML-KEM (Kyber) & ML-DSA (Dilithium) ready
 - 📝 **Document Signing** - Sign documents with your wallet (backend ready)
 
 ## Tech Stack
@@ -27,6 +29,12 @@ A secure secret management and document signing application using MetaMask for a
 - **TailwindCSS** - Styling
 - **@metamask/eth-sig-util** - Encryption utilities
 - **ethers.js** - Ethereum library
+
+### Security & Cryptography
+- **TrustKeys (Experimental)** - Browser extension for Post-Quantum Cryptography
+  - **Crystals-Kyber** - Quantum-resistant Key Encapsulation
+  - **Crystals-Dilithium** - Quantum-resistant Digital Signatures
+  - *Planned integration alongside MetaMask*
 
 ## Getting Started
 
@@ -88,20 +96,33 @@ The frontend API URL can be configured using environment variables.
 
 ### Running on a Remote Server
 
-If you are running the frontend on a remote server (e.g., a VPS) and want to access it from your local browser:
+If you are running the frontend on a remote server (e.g., a VPS) and want to access it from your local browser via a custom domain or IP:
 
-1. **Configure Backend URL**:
-   Edit `.env` and set `VITE_API_BASE_URL` to the public IP or domain of your backend.
+1. **Configure Backend URL (Frontend)**:
+   Edit `frontend/.env` and set `VITE_API_BASE_URL` to the public URL of your backend.
    ```
-   VITE_API_BASE_URL=http://your-server-ip:8000
+   VITE_API_BASE_URL=https://api.yourdomain.com
    ```
 
-2. **Run with Host Exposure**:
+2. **Configure Allowed Hosts (Frontend)**:
+   If accessing via a specific domain (e.g. `safelog.hashpar.com`), add it to `ALLOWED_HOSTS` in `frontend/.env` to prevent "Blocked request" errors from Vite.
+   ```
+   ALLOWED_HOSTS=safelog.hashpar.com
+   ```
+
+3. **Configure CORS (Backend)**:
+   The backend restricts access to known origins. To allow your frontend domain to make requests, set `ALLOWED_ORIGINS` environment variable when running the backend.
+   ```bash
+   export ALLOWED_ORIGINS="http://yourdomain.com,http://another-domain.com"
+   python3 -m uvicorn main:app --reload --port 8000
+   ```
+   *Note: `localhost:5173` is allowed by default.*
+
+4. **Run with Host Exposure**:
    By default, Vite only listens on localhost. To access it externally, run:
    ```bash
    npm run dev -- --host
    ```
-   This will listen on `0.0.0.0`, allowing access via `http://your-server-ip:5173`.
 
 ### Production Build
 
