@@ -17,7 +17,7 @@ const pendingRequests = new Map(); // ID -> { resolve, reject, type, data }
 const initializeStorage = async () => {
     const { vaultData } = await chrome.storage.local.get('vaultData');
     state.hasPassword = !!vaultData;
-    console.log("Storage initialized. Encrypted vault found:", !!vaultData);
+
 };
 initializeStorage();
 
@@ -272,6 +272,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                 dilithiumPublicKey: account.dilithium.publicKey
                             }
                         });
+                    }
+                    break;
+                }
+
+                case 'EXPORT_KEYS': {
+                    if (state.isLocked) throw new Error("Locked");
+                    if (!sender.url || !sender.url.includes('index.html')) {
+                        throw new Error("Unauthorized: Internal use only");
+                    }
+
+                    // 1. Verify Password by attempting to decrypt stored vault
+                    const { vaultData } = await chrome.storage.local.get('vaultData');
+                    try {
+                        const verifiedVault = await decryptVault(vaultData, request.password);
+                        // Password correct.
+                        // 2. Return accounts with private keys
+                        sendResponse({ success: true, accounts: verifiedVault.accounts });
+                    } catch (e) {
+                        console.error("Export failed: Invalid password", e);
+                        // Intentionally generic error
+                        sendResponse({ success: false, error: "Invalid Password" });
+                    }
+                    break;
+                }
+
+                case 'IMPORT_KEYS': {
+                    if (state.isLocked) throw new Error("Locked");
+                    if (!sender.url || !sender.url.includes('index.html')) {
+                        throw new Error("Unauthorized: Internal use only");
+                    }
+
+                    try {
+                        const newAccounts = request.accounts;
+                        if (!Array.isArray(newAccounts)) throw new Error("Invalid format");
+
+                        // Merge logic
+                        let addedCount = 0;
+                        for (const acc of newAccounts) {
+                            if (!acc.id || !acc.kyber || !acc.dilithium) continue; // Basic validation
+
+                            // Check for duplicates by ID
+                            if (!state.vault.accounts.find(a => a.id === acc.id)) {
+                                state.vault.accounts.push(acc);
+                                addedCount++;
+                            }
+                        }
+
+                        if (addedCount > 0) {
+                            await saveVault(sessionPassword);
+                        }
+
+                        sendResponse({ success: true, count: addedCount });
+                    } catch (e) {
+                        sendResponse({ success: false, error: e.message });
                     }
                     break;
                 }

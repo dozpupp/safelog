@@ -1,10 +1,10 @@
 # TrustKeys - Post-Quantum Cryptography (PQC) Extension
 
-TrustKeys is an experimental, quantum-resistant browser extension designed to secure Web3 interactions against future quantum computing threats. It implements the **Module-Lattice-based Key Encapsulation Mechanism (ML-KEM)** and **Digital Signature Algorithm (ML-DSA)** standards.
+TrustKeys is a quantum-resistant browser extension designed to secure Web3 interactions against future quantum computing threats. It implements the **Module-Lattice-based Key Encapsulation Mechanism (ML-KEM)** and **Digital Signature Algorithm (ML-DSA)** standards.
 
-> **Status**: Experimental / Proof-of-Concept
-> **Algorithms**: Crystals-Kyber (Key Encapsulation) & Crystals-Dilithium (Digital Signatures)
-> **Integration**: Planned for integration into SafeLog alongside MetaMask.
+> **Status**: Integrated & Functional
+> **Algorithms**: Crystals-Kyber-768 (ML-KEM) & Crystals-Dilithium-2 (ML-DSA)
+> **Role**: Primary PQC Authentication Provider for SafeLog.
 
 ---
 
@@ -60,55 +60,45 @@ TrustKeys enforces a strict "User Consent" model similar to Ethereum wallets:
 
 ## 💻 Web API Reference
 
-TrustKeys injects a `window.trustkeys` object into web pages.
+TrustKeys injects a `window.trustkeys` object into authorized web pages.
 
 ### 1. Connect
-Request access to the user's wallet. Must be called before any other method.
+Request access to the user's wallet. **Required** before any other method.
 ```javascript
 const success = await window.trustkeys.connect();
-// Triggers popup. Returns true if approved, false/error if rejected.
+// Triggers popup. Returns true if approved.
 ```
 
-### 2. Check Connection
-Check if the current origin is already authorized.
-```javascript
-const isConnected = await window.trustkeys.isConnected();
-// Returns true/false
-```
-
-### 3. Get Account
+### 2. Get Account
 Get the active account's public keys.
 ```javascript
 const account = await window.trustkeys.getAccount();
-// Returns { name, kyberPublicKey, dilithiumPublicKey }
+// Returns { 
+//   name: "My PQC Key", 
+//   kyberPublicKey: "hex...", 
+//   dilithiumPublicKey: "hex..." 
+// }
 ```
 
-### 4. Sign Message (ML-DSA)
+### 3. Sign Message (ML-DSA)
 Sign a message using the active account's Dilithium private key.
 ```javascript
-const signature = await window.trustkeys.sign("Hello Quantum World");
+const signature = await window.trustkeys.sign("Login Nonce: 12345");
 // Triggers Approval Popup. Returns hex-encoded signature.
 ```
 
-### 5. Verify Signature
-Verify a Dilithium signature. (Does not require auth, purely mathematical).
+### 4. Encrypt (ML-KEM + AES)
+Encrypt data for a target recipient (using their Kyber Public Key).
 ```javascript
-const isValid = await window.trustkeys.verify(message, signature, publicKey);
-// Returns true/false
+const encrypted = await window.trustkeys.encrypt("My Secret", recipientKyberKey);
+// Returns { kem: "hex", iv: "hex", content: "hex" }
 ```
 
-### 6. Encrypt (ML-KEM + AES)
-Encrypt a message for a specific public key (or self if omitted).
+### 5. Decrypt
+Decrypt data intended for the active user.
 ```javascript
-const ciphertext = await window.trustkeys.encrypt("Secret Data", optionalPublicKey);
-// Returns { salt, iv, ciphertext } object
-```
-
-### 7. Decrypt
-Decrypt a message using the active account's private key.
-```javascript
-const plaintext = await window.trustkeys.decrypt(ciphertextObject);
-// Triggers Approval Popup. Returns decrypted string.
+const plaintext = await window.trustkeys.decrypt(encryptedObject);
+// Triggers Approval Popup. Returns original string.
 ```
 
 ---
@@ -119,11 +109,20 @@ TrustKeys is being developed as a core security module for **SafeLog**.
 - **Current**: Standalone Browser Extension (Proof of Concept).
 - **Phase 2**: Integration with SafeLog Web App.
 
-### 🛠️ Ongoing Development / To-Do
-- [ ] **Export Keys**: Allow exporting private keys (encrypted JSON).
-  - *Must require password validation.*
-  - *Must display strict security warnings to User.*
-- [ ] **Import Keys**: Restore accounts from exported JSON files.
+### 🛠️ Key Management Features
+- **Export Keys**:
+  - Accessible via Settings (⚙️).
+  - Requires Vault Password.
+  - Generates a JSON backup of all accounts (Private + Public Keys).
+  - **Security Warning**: Backup file is unencrypted (Plain Text). Store securely!
+- **Import Keys**:
+  - Restores accounts from a JSON backup.
+  - Merges new accounts into the existing vault.
+
+### 🔗 Integration Roadmap
+- [x] **Export Keys**: Secure password-gated export.
+- [x] **Import Keys**: Restore from JSON.
+- [x] **SafeLog Integration**: Fully integrated with frontend.
 
 ---
 

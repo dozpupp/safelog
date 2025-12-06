@@ -96,12 +96,81 @@ const DecryptScreen = ({ requestId, requestData, onResolve }) => {
   );
 };
 
+const SettingsModal = ({ onClose, onExport, onImport }) => {
+  const [password, setPassword] = useState('');
+  const [mode, setMode] = useState('menu'); // menu, export
+  const [error, setError] = useState('');
+
+  const handleExport = () => {
+    if (!password) return setError("Password required");
+    onExport(password, (success, err) => {
+      if (!success) setError(err || "Export failed");
+      else onClose();
+    });
+  };
+
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.accounts) throw new Error("Invalid format");
+        onImport(data.accounts);
+      } catch (err) {
+        setError("Invalid file format");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <button className="close-btn" onClick={onClose}>×</button>
+        <h3>Settings</h3>
+
+        {mode === 'menu' && (
+          <div className="settings-menu">
+            <button onClick={() => setMode('export')} className="danger-btn">Export Keys</button>
+            <label className="primary-btn" style={{ display: 'block', textAlign: 'center', marginTop: '10px', cursor: 'pointer' }}>
+              Import Keys
+              <input type="file" style={{ display: 'none' }} onChange={handleImport} accept=".json" />
+            </label>
+          </div>
+        )}
+
+        {mode === 'export' && (
+          <div className="export-flow">
+            <div className="warning-box">
+              <strong>⚠️ SECURITY WARNING</strong>
+              <p>You are about to export your private keys in plain text. Anyone with this file can access your account.</p>
+            </div>
+            <p>Enter password to confirm:</p>
+            <input
+              type="password"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError('') }}
+              placeholder="Password"
+            />
+            {error && <div className="error">{error}</div>}
+            <button onClick={handleExport} className="danger-btn">Confirm Export</button>
+            <button onClick={() => setMode('menu')} className="text-btn">Back</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const [accounts, setAccounts] = useState([]);
   const [activeAccount, setActiveAccount] = useState(null);
   const [newAccountName, setNewAccountName] = useState('');
   const [loading, setLoading] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     fetchAccounts();
@@ -154,15 +223,54 @@ const Dashboard = () => {
     });
   };
 
+  const handleExportKeys = (password, cb) => {
+    chrome.runtime.sendMessage({ type: 'EXPORT_KEYS', password }, (res) => {
+      if (res && res.success) {
+        // Download JSON
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ accounts: res.accounts }));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "trustkeys_backup.json");
+        document.body.appendChild(downloadAnchorNode); // required for firefox
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+        cb(true);
+      } else {
+        cb(false, res.error);
+      }
+    });
+  };
+
+  const handleImportKeys = (newAccounts) => {
+    chrome.runtime.sendMessage({ type: 'IMPORT_KEYS', accounts: newAccounts }, (res) => {
+      if (res && res.success) {
+        alert(`Successfully imported ${res.count} accounts.`);
+        fetchAccounts();
+        setShowSettings(false);
+      } else {
+        alert(`Import failed: ${res.error}`);
+      }
+    });
+  };
+
   return (
     <div className="dashboard">
       <div className="header">
         <h2>TrustKeys <span className="highlight">PQC</span></h2>
         <div className="header-actions">
+          <button className="small-btn" onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
           <button className="small-btn" onClick={lockVault} title="Lock Vault">🔒</button>
           <div className={`status-indicator ${activeAccount ? 'active' : ''}`}></div>
         </div>
       </div>
+
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onExport={handleExportKeys}
+          onImport={handleImportKeys}
+        />
+      )}
 
       {activeAccount ? (
         <div className="card active-card">

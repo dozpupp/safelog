@@ -166,11 +166,7 @@ export const decryptMessage = async (encryptedData, privateKeyHex) => {
 
 // --- Vault Security ---
 
-/**
- * Helper: Uint8Array/Array <-> Hex
- * (Redefined here if not exported, or assume scope. Note: toHex/fromHex are consts in this file, not exported)
- * Check if they are in scope. Yes, defined at top level.
- */
+
 
 // Helper to derive key
 async function deriveKey(password, salt) {

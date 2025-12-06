@@ -1,16 +1,69 @@
-# React + Vite
+# SafeLog Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React-based frontend for SafeLog, featuring dual authentication (MetaMask + TrustKeys) and a context-driven secure architecture.
 
-Currently, two official plugins are available:
+## Architecture
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Context Providers (`/src/context`)
 
-## React Compiler
+The application state is managed through three distinct contexts to separate concerns:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. **`AuthContext.jsx`**
+   - **Role**: Global User Session Management.
+   - **State**: `user` object, `isAuthenticated`, `authType` ('metamask' | 'trustkeys').
+   - **Functions**: `login`, `logout`, `updateUser`.
+   - **Dependents**: Consumed by UI components to check login status.
 
-## Expanding the ESLint configuration
+2. **`Web3Context.jsx`**
+   - **Role**: Ethereum / MetaMask Integration.
+   - **State**: `currentAccount` (Eth Address), `encryptionPublicKey` (Eth Key).
+   - **Functions**: `connect`, `login` (Sign-in with Ethereum).
+   - **Dependents**: Used for standard wallet operations.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+3. **`PQCContext.jsx`**
+   - **Role**: TrustKeys / Post-Quantum Integration.
+   - **State**: `pqcAccount` (Dilithium PK), `kyberKey` (Encryption Key).
+   - **Functions**: 
+     - `loginTrustKeys`: Authenticates via PQC signature.
+     - `encrypt`: Client-side hybrid encryption (Kyber+AES).
+     - `decrypt`: Client-side decryption.
+
+### Component Structure
+
+- **`Login.jsx`**: Handles the initial routing to either MetaMask or TrustKeys login flows.
+- **`Dashboard.jsx`**: Main secure area. 
+  - Dynamically switches encryption/decryption logic based on `authType`.
+  - Adapts UI labels (e.g., "Wallet Address" vs "ML-DSA ID").
+- **`utils/crypto.js`**: Helper functions for standard Ethereum cryptography.
+
+## Development
+
+### Setup
+
+```bash
+# Install dependencies
+npm install
+
+# Setup environment
+cp .env.example .env
+
+# Run dev server
+npm run dev
+```
+
+### Key Features
+
+- **Profile Management**: Users can update their username.
+- **Secret Sharing**: Secrets are re-encrypted client-side for the recipient.
+- **Truncated Display**: Long keys (Ethereum and PQC) are visually truncated (e.g., `0x123...456`) but full keys are available via copy-to-clipboard.
+
+## TrustKeys Integration
+
+The frontend detects the `window.trustkeys` API injected by the browser extension.
+
+- **Check Availability**: `usePQC().checkAvailability()`
+- **Login Flow**:
+  1. Frontend requests Connection (`window.trustkeys.connect()`).
+  2. Frontend requests Account Info.
+  3. Frontend signs a Nonce with Dilithium (`sign()`).
+  4. Backend validates signature via Node bridge.

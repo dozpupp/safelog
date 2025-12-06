@@ -1,48 +1,42 @@
 # SafeLog
 
-A secure secret management and document signing application using MetaMask for authentication and encryption.
+A secure secret management and document signing application featuring **Quantum-Proof Security** via the TrustKeys extension.
 
 ## Features
 
-- 🔐 **MetaMask Authentication** - Login with your Ethereum wallet
-- 🔒 **Client-Side Encryption** - Secrets encrypted with your MetaMask encryption keys
-- 💾 **Secure Storage** - Encrypted data stored server-side
-- 🔓 **On-Demand Decryption** - Decrypt secrets only when needed via MetaMask
-- 🤝 **Secret Sharing** - Share encrypted secrets with other users securely
-- 👤 **User Profiles** - Manage your username and profile
-- 🎨 **Modern UI** - Dark-themed interface with TailwindCSS
-- 🤖 **TrustKeys Module** - **[Experimental]** Post-Quantum Cryptography (PQC) integration
-- 🔒 **Quantum-Proof Security** - ML-KEM (Kyber) & ML-DSA (Dilithium) ready
-- 📝 **Document Signing** - Sign documents with your wallet (backend ready)
+- 🔐 **Dual Authentication** - Login with **MetaMask** (Ethereum) or **TrustKeys** (Post-Quantum).
+- 🧬 **Quantum-Proof Cryptography** - Integration with **Crystals-Kyber** (ML-KEM) and **Crystals-Dilithium** (ML-DSA).
+- 🛡️ **Secure Vault** - Client-side encryption ensures the server never sees your secrets.
+- 💾 **Hybrid Encryption** -  
+  - Standard Users: ECDH + AES (MetaMask).
+  - PQC Users: Kyber-768 Encapsulation + AES-GCM (TrustKeys).
+- 🤝 **Secure Sharing** - Share encrypted secrets between any user type (Eth ↔ PQC).
+- 👤 **User Profiles** - Manage usernames and view PQC identities.
 
 ## Tech Stack
 
-### Backend
-- **FastAPI** - Modern Python web framework
-- **SQLAlchemy** - ORM for database management
-- **SQLite** - Lightweight database
-- **eth-account** - Ethereum signature verification
+### Backend (`/backend`)
+- **FastAPI** - High-performance Python framework.
+- **SQLAlchemy + SQLite** - Robust data persistence.
+- **Node.js Bridge** - Interop layer for validating Dilithium signatures.
 
-### Frontend
-- **React 19** - UI framework
-- **Vite** - Build tool and dev server
-- **TailwindCSS** - Styling
-- **@metamask/eth-sig-util** - Encryption utilities
-- **ethers.js** - Ethereum library
+### Frontend (`/frontend`)
+- **React 19 + Vite** - Fast, modern UI.
+- **Context Architecture** - Separation of concerns (`AuthContext`, `Web3Context`, `PQCContext`).
+- **TailwindCSS** - Responsive dark-mode design.
 
-### Security & Cryptography
-- **TrustKeys (Experimental)** - Browser extension for Post-Quantum Cryptography
-  - **Crystals-Kyber** - Quantum-resistant Key Encapsulation
-  - **Crystals-Dilithium** - Quantum-resistant Digital Signatures
-  - *Planned integration alongside MetaMask*
+### TrustKeys Extension (`/trustkeys`)
+- **Browser Extension** - Manages PQC keys securely.
+- **WASM Cryptography** - High-performance ML-KEM and ML-DSA implementation.
+- **Encrypted Vault** - AES-256-GCM protection for private keys.
 
 ## Getting Started
 
 ### Prerequisites
-
 - Python 3.11+
 - Node.js 20+
-- MetaMask browser extension
+- **TrustKeys Extension** (Included in repo) for PQC features.
+- MetaMask (Optional, for standard features).
 
 ### Installation
 
@@ -55,48 +49,39 @@ A secure secret management and document signing application using MetaMask for a
 2. **Setup Backend**
    ```bash
    cd backend
+   # Establish environment
+   cp .env.example .env
    pip3 install -r requirements.txt
-   ```
-
-3. **Initialize Database**
-   Before running the backend for the first time, initialize the database:
-   ```bash
-   # This script creates the SQLite database and necessary tables
+   
+   # Initialize DB
    python3 create_database.py
    ```
 
-4. **Create Test Users (Optional)**
-   If you want to populate the database with test users for development:
-   ```bash
-   python3 create_test_users.py
-   ```
-
-5. **Setup Frontend**
-   ```bash
-   cd frontend
-   npm install
-   ```
-
-### Configuration
-
-The frontend API URL can be configured using environment variables.
-
-1. Copy the example environment file:
+3. **Setup Frontend**
    ```bash
    cd frontend
    cp .env.example .env
+   npm install
    ```
 
-2. Edit `.env` and set your backend URL:
-   ```
-   VITE_API_BASE_URL=http://your-backend-host:8000
-   ```
+4. **Install TrustKeys Extension**
+   - Navigate to `safelog/trustkeys`.
+   - Run `npm install` and `npm run build`.
+   - Open Chrome/Brave to `chrome://extensions`.
+   - Enable "Developer Mode".
+   - Click "Load Unpacked" and select `safelog/trustkeys/dist`.
 
-   *If not set, it defaults to `http://localhost:8000`.*
+5. **Run Application**
+   - Backend: `uvicorn main:app --reload` (Port 8000)
+   - Frontend: `npm run dev` (Port 5173)
 
-### Running on a Remote Server
+## Security Architecture
 
-If you are running the frontend on a remote server (e.g., a VPS) and want to access it from your local browser via a custom domain or IP:
+SafeLog employs a **Zero-Trust** architecture. All data is encrypted client-side before transmission. 
+
+- **Authentication**: Uses digital signatures (ECDSA for Eth, Dilithium-2 for TrustKeys) to prove identity without exchanging passwords.
+- **Data Protection**: Secrets are encrypted using a recipient's public key (encryption key) before hitting the database.
+- **Post-Quantum Readiness**: Ready for the future with NIST-standardized algorithms (ML-KEM, ML-DSA).
 
 1. **Configure Backend URL (Frontend)**:
    Edit `frontend/.env` and set `VITE_API_BASE_URL` to the public URL of your backend.
