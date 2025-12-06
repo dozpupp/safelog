@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrustKeys API Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-connected {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .status-disconnected {
+            color: #c0392b;
+            font-weight: bold;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-family: monospace;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #7f8c8d;
+        }
+
+        .output {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-family: monospace;
+            min-height: 40px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>TrustKeys API Test</h1>
+
+    <div class="card">
+        <h2>Status</h2>
+        <div id="connectionStatus" class="status-disconnected">● API Not Detected</div>
+        <p>Ensure the TrustKeys extension is installed and active.</p>
+        <button onclick="checkConnection()">Check Connection & Get Account</button>
+
+        <div id="accountInfo" style="margin-top: 15px; display: none;">
+            <label>Active Account Name</label>
+            <div id="accountName" class="output"></div>
+
+            <label>Kyber Public Key (Encryption)</label>
+            <div id="kyberKey" class="output"></div>
+
+            <label>Dilithium Public Key (Signing)</label>
+            <div id="dilithiumKey" class="output"></div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- Signing Section -->
+        <div class="card">
+            <h2>Connection</h2>
+            <div class="status-box" id="connectionStatus">Status: Not Connected</div>
+            <div class="button-group">
+                <button onclick="testConnect()">Connect to TrustKeys</button>
+                <button onclick="checkConnection()">Check Connection</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Key Management</h2> & Verify (Dilithium)</h2>
+
+            <label>Message to Sign</label>
+            <textarea id="signInput" rows="3">Hello, Quantum World!</textarea>
+            <button onclick="signMessage()">Sign Message</button>
+
+            <label>Signature (Hex)</label>
+            <textarea id="signatureOutput" rows="4" readonly></textarea>
+
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+            <button onclick="verifySignature()">Verify Signature</button>
+            <div id="verifyOutput" class="output"></div>
+        </div>
+
+        <!-- Encryption Section -->
+        <div class="card">
+            <h2>Encrypt & Decrypt (Kyber + AES)</h2>
+
+            <label>Message to Encrypt</label>
+            <textarea id="encryptInput" rows="3">Top Secret Data</textarea>
+            <button onclick="encryptMessage()">Encrypt (Self)</button>
+
+            <label>Ciphertext (JSON)</label>
+            <textarea id="ciphertextOutput" rows="4"></textarea>
+
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+            <button onclick="decryptMessage()">Decrypt</button>
+            <div id="decryptOutput" class="output"></div>
+        </div>
+    </div>
+
+    <script>
+        // Helper to pretty print JSON
+        const prettyParams = (obj) => JSON.stringify(obj, null, 2);
+
+        async function checkConnection() {
+            if (window.trustkeys) {
+                document.getElementById('connectionStatus').className = 'status-connected';
+                document.getElementById('connectionStatus').innerText = '● API Detected';
+
+                try {
+                    const account = await window.trustkeys.getAccount();
+                    if (account) {
+                        document.getElementById('accountInfo').style.display = 'block';
+                        document.getElementById('accountName').innerText = account.name;
+                        document.getElementById('kyberKey').innerText = account.kyberPublicKey;
+                        document.getElementById('dilithiumKey').innerText = account.dilithiumPublicKey;
+                    } else {
+                        alert("No active account found. Please create/select one in the extension popup.");
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert("Error getting account: " + e.message);
+                }
+            } else {
+                document.getElementById('connectionStatus').className = 'status-disconnected';
+                document.getElementById('connectionStatus').innerText = '● API Not Detected (Refresh page?)';
+            }
+        }
+
+        async function testConnect() {
+            try {
+                if (!window.trustkeys?.connect) {
+                    showStatus("Error: trustkeys.connect() not found. Reload extension?", true);
+                    return;
+                }
+                const success = await window.trustkeys.connect();
+                document.getElementById('connectionStatusSimple').innerText = success ? "Status: Connected" : "Status: Rejected/Failed";
+                document.getElementById('connectionStatusSimple').className = "status-box " + (success ? "success" : "error");
+                showStatus(success ? "Connected successfully" : "Connection failed");
+            } catch (e) {
+                showStatus("Connect Error: " + e.message, true);
+            }
+        }
+
+        async function checkConnectionSimple() {
+            try {
+                if (!window.trustkeys?.isConnected) {
+                    showStatus("Error: trustkeys.isConnected() not found. Reload extension?", true);
+                    return;
+                }
+                const connected = await window.trustkeys.isConnected();
+                document.getElementById('connectionStatusSimple').innerText = connected ? "Status: Connected" : "Status: Not Connected";
+                document.getElementById('connectionStatusSimple').className = "status-box " + (connected ? "success" : "error");
+                showStatus(connected ? "Connected" : "Not Connected");
+            } catch (e) {
+                showStatus("Check Error: " + e.message, true);
+            }
+        }
+
+        async function signMessage() {
+            const message = document.getElementById('signInput').value;
+            if (!message) return alert("Enter a message");
+
+            try {
+                const signature = await window.trustkeys.sign(message);
+                document.getElementById('signatureOutput').value = signature;
+            } catch (e) {
+                alert("Sign error: " + e.message);
+            }
+        }
+
+        async function verifySignature() {
+            const message = document.getElementById('signInput').value;
+            const signature = document.getElementById('signatureOutput').value;
+            // Get current key displayed
+            const publicKey = document.getElementById('dilithiumKey').innerText;
+
+            if (!message || !signature || !publicKey) return alert("Missing data for verification");
+
+            try {
+                const isValid = await window.trustkeys.verify(message, signature, publicKey);
+                const el = document.getElementById('verifyOutput');
+                el.innerText = isValid ? "✅ VALID SHA-3 Signature" : "❌ INVALID Signature";
+                el.style.color = isValid ? "#2ecc71" : "#e74c3c";
+            } catch (e) {
+                alert("Verify error: " + e.message);
+            }
+        }
+
+        async function encryptMessage() {
+            const message = document.getElementById('encryptInput').value;
+            if (!message) return alert("Enter a message");
+
+            try {
+                // Encrypts for self (active account) by default if no pk provided
+                const result = await window.trustkeys.encrypt(message);
+                document.getElementById('ciphertextOutput').value = JSON.stringify(result, null, 2);
+            } catch (e) {
+                alert("Encrypt error: " + e.message);
+            }
+        }
+
+        async function decryptMessage() {
+            const ciphertextStr = document.getElementById('ciphertextOutput').value;
+            if (!ciphertextStr) return alert("No ciphertext");
+
+            try {
+                const ciphertext = JSON.parse(ciphertextStr);
+                const result = await window.trustkeys.decrypt(ciphertext);
+                document.getElementById('decryptOutput').innerText = result;
+            } catch (e) {
+                alert("Decrypt error: " + e.message);
+                console.error(e);
+            }
+        }
+
+        // Auto check on load
+        window.addEventListener('load', () => {
+            setTimeout(checkConnection, 500);
+        });
+    </script>
+</body>
+
+</html>
