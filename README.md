@@ -60,6 +60,9 @@ A secure secret management and document signing application featuring **Quantum-
    cp .env.example .env
    pip3 install -r requirements.txt
    
+   # Install Node.js dependencies (for PQC Bridge)
+   npm install
+
    # Initialize DB
    python3 create_database.py
    ```
