@@ -12,6 +12,7 @@ let state = {
 };
 
 let sessionPassword = null;
+
 const pendingRequests = new Map(); // ID -> { resolve, reject, type, data }
 
 const initializeStorage = async () => {
@@ -58,6 +59,7 @@ const setupPassword = async (password) => {
     state.vault = { accounts: [], activeAccountId: null, permissions: {} };
     await saveVault(password);
     state.isLocked = false;
+
     return true;
 };
 
@@ -71,6 +73,7 @@ const unlock = async (password) => {
         if (!state.vault.permissions) state.vault.permissions = {};
 
         state.isLocked = false;
+
         return true;
     } catch (e) {
         console.error("Unlock failed", e);
@@ -87,6 +90,7 @@ const unlockWithSession = async (password) => {
     const success = await unlock(password);
     if (success) {
         sessionPassword = password;
+
     }
     return success;
 };
@@ -142,6 +146,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     break;
                 }
                 case 'CONNECT': {
+
                     if (state.isLocked) {
                         // Launch popup to prompt login (no specific route, just open)
                         await launchPopup();
@@ -163,6 +168,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             // On approve
                             state.vault.permissions[origin] = true;
                             saveVault(sessionPassword);
+                            // Reset on approval
                             sendResponse({ success: true });
                         },
                         reject: (err) => {
@@ -183,11 +189,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     if (!req) {
                         sendResponse({ success: false, error: "Request not found" });
                     } else {
+                        // Viewing request counts as activity? Maybe.
+
                         sendResponse({ success: true, request: { type: req.type, data: req.data } });
                     }
                     break;
                 }
                 case 'RESOLVE_REQUEST': {
+
                     const req = pendingRequests.get(request.requestId);
                     if (!req) return sendResponse({ success: false });
 
@@ -203,7 +212,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
 
                 // --- Accounts ---
+                case 'BACKUP_TO_GOOGLE': {
+
+                    if (state.isLocked) throw new Error("Vault is locked");
+                    const { password, token } = request;
+                    const { apiUrl } = await chrome.storage.local.get('apiUrl');
+                    // Default to localhost:8000 as requested
+                    const apiBase = apiUrl || 'http://localhost:8000';
+                    // Placeholder for actual backup logic
+                    sendResponse({ success: false, error: "Backup to Google not yet implemented" });
+                    break;
+                }
+                case 'RESTORE_FROM_GOOGLE': {
+
+                    const { password, token } = request;
+                    const { apiUrl } = await chrome.storage.local.get('apiUrl');
+                    // Default to localhost:8000 as requested
+                    const apiBase = apiUrl || 'http://localhost:8000';
+
+                    // 1. Fetch
+                    sendResponse({ success: false, error: "Restore from Google not yet implemented" });
+                    break;
+                }
                 case 'CREATE_ACCOUNT': {
+
                     if (state.isLocked) throw new Error("Locked");
                     // Only allow internal creation
                     if (!sender.url || !sender.url.includes('index.html')) {
@@ -219,6 +251,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     break;
                 }
                 case 'GET_ACCOUNTS': {
+                    // UI Polling usually triggers this?
                     if (state.isLocked) throw new Error("Locked");
                     // Only allow internal
                     if (!sender.url || !sender.url.includes('index.html')) {
@@ -236,6 +269,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     break;
                 }
                 case 'SET_ACTIVE_ACCOUNT': {
+
                     if (state.isLocked) throw new Error("Locked");
                     if (!sender.url || !sender.url.includes('index.html')) {
                         throw new Error("Unauthorized: Internal use only");
@@ -246,6 +280,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     break;
                 }
                 case 'GET_ACTIVE_ACCOUNT': {
+                    // Don't reset on this one if external?
+                    if (sender.url && sender.url.includes('index.html')) {
+                        // Internal UI
+                    }
                     if (state.isLocked) throw new Error("Locked");
 
                     const isInternal = sender.url && sender.url.includes('index.html') && sender.id === chrome.runtime.id;
@@ -277,6 +315,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
 
                 case 'EXPORT_KEYS': {
+
                     if (state.isLocked) throw new Error("Locked");
                     if (!sender.url || !sender.url.includes('index.html')) {
                         throw new Error("Unauthorized: Internal use only");
@@ -298,6 +337,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
 
                 case 'IMPORT_KEYS': {
+
                     if (state.isLocked) throw new Error("Locked");
                     if (!sender.url || !sender.url.includes('index.html')) {
                         throw new Error("Unauthorized: Internal use only");
@@ -332,6 +372,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                 // --- Crypto Operations ---
                 case 'SIGN': {
+                    // Always activity
                     if (state.isLocked) throw new Error("Locked");
                     const origin = request.origin; // We need sender origin!
                     // In background script, sender.url is available if from extension or content script (usually url)
@@ -384,11 +425,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
                 }
                 case 'VERIFY': {
+                    // Verify is passive, usually. But let's count it?
+                    // No, verify doesn't use private key. No auth needed.
+                    // But resets timer? User might be verifying things on a page.
+                    // Let's reset it to be safe (keeps session active during usage).
+
                     const isValid = await verifySignature(request.message, request.signature, request.publicKey);
                     sendResponse({ success: true, isValid });
                     break;
                 }
                 case 'ENCRYPT': {
+
                     // Logic similar to previous, but needs permissions?
                     // Typically encryption with public key is safe to allow without prompt.
                     // But requirement says "When interaction with private keys, user must accept". Encryption uses Public Key.
@@ -406,6 +453,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     break;
                 }
                 case 'DECRYPT': {
+
                     if (state.isLocked) throw new Error("Locked");
 
                     const checkOrigin = sender.origin || request.origin;

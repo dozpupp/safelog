@@ -7,6 +7,9 @@ A secure secret management and document signing application featuring **Quantum-
 - 🔐 **Dual Authentication** - Login with **MetaMask** (Ethereum) or **TrustKeys** (Post-Quantum).
 - 🧬 **Quantum-Proof Cryptography** - Integration with **Crystals-Kyber** (ML-KEM) and **Crystals-Dilithium** (ML-DSA).
 - 🛡️ **Secure Vault** - Client-side encryption ensures the server never sees your secrets.
+- 📂 **File Vault** - Securely upload, encrypt, and share files (Images, PDFs, etc.).
+- 💣 **Timebomb Access** - Share secrets with self-destruct timers (Ephemeral Access).
+- ☁️ **MPC Recovery** - Backup your PQC identity using **Google ID** (Multi-Party Computation) without entrusting your full key to any single party.
 - 💾 **Hybrid Encryption** -  
   - Standard Users: ECDH + AES (MetaMask).
   - PQC Users: Kyber-768 Encapsulation + AES-GCM (TrustKeys).
@@ -29,6 +32,7 @@ A secure secret management and document signing application featuring **Quantum-
 - **Browser Extension** - Manages PQC keys securely.
 - **WASM Cryptography** - High-performance ML-KEM and ML-DSA implementation.
 - **Encrypted Vault** - AES-256-GCM protection for private keys.
+- **MPC Recovery** - Google-authenticated key reconstruction.
 
 ## Getting Started
 
@@ -83,6 +87,8 @@ SafeLog employs a **Zero-Trust** architecture. All data is encrypted client-side
 - **Data Protection**: Secrets are encrypted using a recipient's public key (encryption key) before hitting the database.
 - **Post-Quantum Readiness**: Ready for the future with NIST-standardized algorithms (ML-KEM, ML-DSA).
 
+### Configuration
+
 1. **Configure Backend URL (Frontend)**:
    Edit `frontend/.env` and set `VITE_API_BASE_URL` to the public URL of your backend.
    ```
@@ -109,40 +115,19 @@ SafeLog employs a **Zero-Trust** architecture. All data is encrypted client-side
    npm run dev -- --host
    ```
 
-### Production Build
-
-For production deployment:
-
-1. **Set Environment Variable**:
-   ```bash
-   export VITE_API_BASE_URL=https://api.yourdomain.com
-   ```
-
-2. **Build the Application**:
-   ```bash
-   npm run build
-   ```
-   This creates a `dist/` folder with static files.
-
-3. **Serve the Application**:
-   You can serve the `dist/` folder using Nginx, Apache, or a static file server like `serve`:
-   ```bash
-   npx serve -s dist
-   ```
-
 ## Usage
 
 ### Login
 1. Click "Connect Wallet"
-2. Approve MetaMask connection
+2. Approve MetaMask connection or TrustKeys Unlock
 3. Sign the authentication message
 4. Approve encryption public key request
 
 ### Create a Secret
 1. Click "+ New Secret"
-2. Enter a name and content
-3. Click "Encrypt & Save"
-4. Secret is encrypted client-side and stored
+2. Enter a name and content OR Upload a file (Image/PDF)
+3. (Optional) Set an Expiry Time (Timebomb)
+4. Click "Encrypt & Save"
 
 ### Share a Secret
 1. Click the Share icon on a secret
@@ -152,15 +137,16 @@ For production deployment:
 
 ### View a Secret
 1. Click the unlock 🔓 button
-2. Approve decryption in MetaMask
+2. Approve decryption
 3. Decrypted content appears below
+4. (For Files) Click "Download Decrypted File"
 
 ## Security
 
 - **No Plain Text Storage** - All secrets are encrypted before leaving your browser
-- **Private Keys Never Exposed** - Encryption/decryption happens via MetaMask
+- **Private Keys Never Exposed** - Encryption/decryption happens via MetaMask or TrustKeys Extension
 - **Client-Side Encryption** - Server never sees your plain text data
-- **Signature-Based Auth** - No passwords, uses Ethereum signatures
+- **Signature-Based Auth** - No passwords, uses Ethereum or PQC signatures
 
 ## Project Structure
 
@@ -171,51 +157,23 @@ safelog/
 │   ├── models.py         # Database models
 │   ├── schemas.py        # Pydantic schemas
 │   ├── auth.py           # Authentication logic
-│   ├── database.py       # Database setup
-│   └── requirements.txt
+│   └── database.py       # Database setup
 └── frontend/
     ├── src/
     │   ├── components/   # React components
-    │   ├── context/      # Web3 context
-    │   ├── utils/        # Crypto utilities
-    │   ├── config.js     # API configuration
+    │   ├── context/      # Auth & Crypto contexts
+    │   ├── utils/        # Crypto utilities (PQC, MPC)
     │   └── App.jsx
-    ├── package.json
     └── vite.config.js
-```
-
-## API Endpoints
-
-- `GET /auth/nonce/{address}` - Get signing nonce
-- `POST /auth/login` - Authenticate with signature
-- `POST /secrets` - Create encrypted secret
-- `GET /secrets/{address}` - List user's secrets
-- `POST /secrets/share` - Share secret with another user
-- `GET /secrets/shared-with/{address}` - List secrets shared with user
-- `GET /users` - Search users
-- `GET /users/{address}` - Get user details
-- `PUT /users/{address}` - Update user profile
-
-## Development
-
-### Backend Development
-```bash
-cd backend
-python3 -m uvicorn main:app --reload
-```
-
-### Frontend Development
-```bash
-cd frontend
-npm run dev
 ```
 
 ## Future Enhancements
 
 - [x] Secret sharing with other users
 - [x] User profiles
+- [x] File Sharing
+- [x] Timebomb (Ephemeral) Access
 - [ ] Document signing UI
-- [ ] Session management with JWT
 - [ ] PostgreSQL support
 - [ ] Mobile-responsive improvements
 
