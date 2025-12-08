@@ -5,8 +5,16 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 
+import AuthBridge from './components/AuthBridge';
+
 function AppContent() {
   const { isAuthenticated } = useAuth();
+
+  // Simple Router
+  const path = window.location.pathname;
+  if (path === '/auth-bridge') {
+    return <AuthBridge />;
+  }
 
   return (
     <>

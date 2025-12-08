@@ -153,6 +153,32 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
     });
   };
 
+  useEffect(() => {
+    // Check for stored token
+    chrome.storage.local.get('googleToken', (res) => {
+      if (res.googleToken) setToken(res.googleToken);
+    });
+
+    // Listen for changes
+    const listener = (changes) => {
+      if (changes.googleToken) setToken(changes.googleToken.newValue);
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, []);
+
+  const handleGoogleLogin = () => {
+    const extId = chrome.runtime.id;
+    // In dev mode, we might want localhost? No, bridge logic handles it.
+    // But we need to make sure the Frontend is running on safelog.hashpar.com OR user is using localhost.
+    // For flexibility, let's stick to production bridge for auth, or make it configurable?
+    // MVP: Hardcode production bridge as that's what has the Google Client ID configured (usually).
+    // If user is running locally, they can still use the prod bridge if the extension ID is accepted.
+    // Wait, "externally_connectable" needs to match.
+    // Prod bridge is safer.
+    chrome.tabs.create({ url: `https://safelog.hashpar.com/auth-bridge?ext_id=${extId}` });
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal">
@@ -192,12 +218,19 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
             <p>1. Enter your TrustKeys Password.</p>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="TrustKeys Password" />
 
-            <p>2. Enter Google ID Token (For Demo/MVP):</p>
-            {/* In production, this would be a "Sign in with Google" button that auto-fills or handles auth internally */}
-            <input type="text" value={token} onChange={e => setToken(e.target.value)} placeholder="Paste Google ID Token..." style={{ fontSize: '0.8em' }} />
+            <p>2. Connect Google Account:</p>
+            {token ? (
+              <div style={{ color: '#4caf50', marginBottom: '10px' }}>✓ Google Connected</div>
+            ) : (
+              <button onClick={handleGoogleLogin} style={{ background: '#4285F4', color: 'white', padding: '10px', width: '100%', marginBottom: '10px', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <span style={{ background: 'white', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4285F4', fontWeight: 'bold' }}>G</span>
+                Sign in with Google
+              </button>
+            )}
 
             {error && <div className="error">{error}</div>}
-            <button onClick={mode === 'backup' ? handleBackup : handleRestore} className="primary-btn" disabled={loading}>
+
+            <button onClick={mode === 'backup' ? handleBackup : handleRestore} className="primary-btn" disabled={loading || !token}>
               {loading ? 'Processing...' : (mode === 'backup' ? 'Encrypt & Upload' : 'Download & Decrypt')}
             </button>
             <button onClick={() => setMode('menu')} className="text-btn">Back</button>
