@@ -18,6 +18,8 @@ app = FastAPI()
 origins = [
     "http://localhost:5173", # Vite default port
     "http://127.0.0.1:5173",
+    "https://safelog.hashpar.com", # Production Frontend
+    "https://safeapi.hashpar.com", # Production Backend (Self)
 ]
 
 # Add allowed origins from environment variable
