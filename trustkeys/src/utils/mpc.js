@@ -3,9 +3,17 @@
 
 // 1. Derive Share A from Password
 // uses PBKDF2 to deterministically generate a key-length buffer from the password
+// 1. Derive Share A from Password
+// uses PBKDF2 to deterministically generate a key-length buffer from the password
 export const deriveShareA = async (password, salt, lengthBytes) => {
     const enc = new TextEncoder();
-    const keyMaterial = await crypto.subtle.importKey(
+    // Use globalThis.crypto or self.crypto or window.crypto safely
+    // In Service Worker, 'self.crypto' or 'crypto' works. In Window, 'window.crypto' works.
+    // 'globalThis.crypto' is usually available in modern envs.
+    const cryptoApi = typeof globalThis !== 'undefined' && globalThis.crypto ? globalThis.crypto :
+        (typeof self !== 'undefined' && self.crypto ? self.crypto : window.crypto);
+
+    const keyMaterial = await cryptoApi.subtle.importKey(
         "raw",
         enc.encode(password),
         { name: "PBKDF2" },
@@ -13,7 +21,7 @@ export const deriveShareA = async (password, salt, lengthBytes) => {
         ["deriveBits"]
     );
 
-    const bits = await crypto.subtle.deriveBits(
+    const bits = await cryptoApi.subtle.deriveBits(
         {
             name: "PBKDF2",
             salt: enc.encode(salt),

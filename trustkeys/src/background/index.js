@@ -1,4 +1,5 @@
 import { generateAccount, signMessage, verifySignature, encryptMessage, decryptMessage, encryptVault, decryptVault } from '../utils/crypto';
+import { deriveShareA, createShareB, recoverSecret, toHex, fromHex } from '../utils/mpc.js';
 
 // Types
 // Account: { id, name, kyber: {publicKey, privateKey}, dilithium: {publicKey, privateKey}, createdAt }
@@ -383,6 +384,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         return true; // Keep channel open
                     }
                 }
+                case 'OAUTH_SUCCESS': {
+                    if (!request.token) throw new Error("Missing token");
+                    // Store token
+                    await chrome.storage.local.set({ googleToken: request.token });
+                    // Optional: Notify popup if open? Storage change listener handles it.
+                    sendResponse({ success: true });
+                    break;
+                }
                 case 'VERIFY': {
                     const isValid = await verifySignature(request.message, request.signature, request.publicKey);
                     sendResponse({ success: true, isValid });
@@ -427,9 +436,110 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     await launchPopup('decrypt', { requestId: reqId });
                     return true; // Keep channel open
                 }
+                case 'BACKUP_TO_GOOGLE': {
+                    if (state.isLocked) throw new Error("Vault is locked");
+                    const { password, token } = request;
+                    const { devMode } = await chrome.storage.local.get('devMode');
+                    const apiBase = devMode ? 'http://localhost:8000' : 'https://safeapi.hashpar.com';
 
-                default:
-                    sendResponse({ success: false, error: 'Unknown message type' });
+                    // Find active account
+                    const account = state.vault.accounts.find(a => a.id === state.vault.activeAccountId) || state.vault.accounts[0];
+                    if (!account) throw new Error("No account to backup");
+
+                    // 1. Dilithium Split
+                    const privKeyBytes = fromHex(account.dilithium.privateKey);
+                    const salt = "safelog_mpc_v1";
+                    const shareA = await deriveShareA(password, salt, privKeyBytes.length);
+                    const shareB = createShareB(privKeyBytes, shareA);
+                    const shareBHex = toHex(shareB);
+
+                    // 2. Kyber Split
+                    const kybSalt = salt + "_kyber";
+                    const kybPrivBytes = fromHex(account.kyber.privateKey);
+                    const kybShareA = await deriveShareA(password, kybSalt, kybPrivBytes.length);
+                    const kybShareB = createShareB(kybPrivBytes, kybShareA);
+
+                    // 3. Upload
+                    const res = await fetch(`${apiBase}/recovery/store`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            token,
+                            share_data: JSON.stringify({
+                                type: 'dilithium_mpc',
+                                shareB: shareBHex,
+                                name: account.name,
+                                dilithiumPublicKey: account.dilithium.publicKey,
+                                kyberPublicKey: account.kyber.publicKey,
+                                kyberShareB: toHex(kybShareB)
+                            })
+                        })
+                    });
+
+                    if (!res.ok) throw new Error("Upload failed: " + res.status);
+                    sendResponse({ success: true });
+                    break;
+                }
+
+                case 'RESTORE_FROM_GOOGLE': {
+                    const { password, token } = request;
+                    const { devMode } = await chrome.storage.local.get('devMode');
+                    const apiBase = devMode ? 'http://localhost:8000' : 'https://safeapi.hashpar.com';
+
+                    // 1. Fetch
+                    const apiRes = await fetch(`${apiBase}/recovery/fetch`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token })
+                    });
+
+                    if (!apiRes.ok) throw new Error("Fetch failed (Check Token or No Backup)");
+                    const { share_data } = await apiRes.json();
+                    const backupData = JSON.parse(share_data);
+
+                    // 2. Recover Dilithium
+                    const salt = "safelog_mpc_v1";
+                    const dimShareB = fromHex(backupData.shareB);
+                    const dimShareA = await deriveShareA(password, salt, dimShareB.length);
+                    const dimPrivKey = recoverSecret(dimShareA, dimShareB);
+
+                    // 3. Recover Kyber
+                    const kybShareB = fromHex(backupData.kyberShareB);
+                    const kybShareA = await deriveShareA(password, salt + "_kyber", kybShareB.length);
+                    const kybPrivKey = recoverSecret(kybShareA, kybShareB);
+
+                    // 4. Create Account Object
+                    const newAccount = {
+                        id: Date.now(),
+                        name: backupData.name + " (Recovered)",
+                        dilithium: {
+                            publicKey: backupData.dilithiumPublicKey,
+                            privateKey: toHex(dimPrivKey)
+                        },
+                        kyber: {
+                            publicKey: backupData.kyberPublicKey,
+                            privateKey: toHex(kybPrivKey)
+                        },
+                        createdAt: new Date().toISOString()
+                    };
+
+                    // 5. Import into Vault
+                    if (!state.vault) {
+                        // If vault is locked/null, we need to init?
+                        // Usually restore happens after Unlock?
+                        // If user has NO vault (fresh install), they should Create or Import.
+                        // If Restore implies "Create Vault from Backup", we need a password to encrypt the new vault.
+                        // Assuming user unlocked an empty vault or created one first.
+                        if (!state.hasPassword) throw new Error("Please set up a password first");
+                        throw new Error("Vault locked");
+                    }
+
+                    state.vault.accounts.push(newAccount);
+                    await saveVault(password); // Re-encrypt vault with same password
+
+                    sendResponse({ success: true, count: 1 });
+                    break;
+                }
             }
         } catch (error) {
             console.error('Background error:', error);
@@ -437,4 +547,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
     })();
     return true; // Keep channel open
+});
+
+// External Message Handler (Web Bridge)
+chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
+    (async () => {
+        try {
+            switch (request.type) {
+                case 'CHECK_CONNECTION':
+                    sendResponse({ success: true, connected: true, version: '1.0.0' });
+                    break;
+
+                case 'OAUTH_SUCCESS': {
+                    if (!request.token) throw new Error("Missing token");
+                    await chrome.storage.local.set({ googleToken: request.token });
+                    sendResponse({ success: true });
+                    break;
+                }
+
+                // Allow Site Connection check from web
+                case 'IS_CONNECTED': {
+                    const origin = sender.origin;
+                    const isConnected = !!state.vault.permissions[origin];
+                    sendResponse({ success: true, connected: isConnected });
+                    break;
+                }
+
+                default:
+                    // Don't respond error for unknown external messages to avoid noise?
+                    // Or respond error to help debug.
+                    sendResponse({ success: false, error: 'Unknown external message type' });
+            }
+        } catch (error) {
+            console.error('External background error:', error);
+            sendResponse({ success: false, error: error.message });
+        }
+    })();
+    return true;
 });

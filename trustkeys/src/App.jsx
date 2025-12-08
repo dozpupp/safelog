@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import './App.css'
+// --- MPC Utilities via Background ---
+// Logic moved to background to avoid React build crashes
 
 // --- Components ---
 
@@ -97,7 +99,7 @@ const DecryptScreen = ({ requestId, requestData, onResolve }) => {
 };
 
 
-import { deriveShareA, createShareB, recoverSecret, toHex, fromHex } from './utils/mpc';
+
 
 const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRestore, loading }) => {
   const [password, setPassword] = useState('');
@@ -153,10 +155,13 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
     });
   };
 
+  const [devMode, setDevMode] = useState(false);
+
   useEffect(() => {
-    // Check for stored token
-    chrome.storage.local.get('googleToken', (res) => {
+    // Check for stored token and dev mode preference
+    chrome.storage.local.get(['googleToken', 'devMode'], (res) => {
       if (res.googleToken) setToken(res.googleToken);
+      if (res.devMode) setDevMode(res.devMode);
     });
 
     // Listen for changes
@@ -167,16 +172,16 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
     return () => chrome.storage.onChanged.removeListener(listener);
   }, []);
 
+  const toggleDevMode = () => {
+    const newVal = !devMode;
+    setDevMode(newVal);
+    chrome.storage.local.set({ devMode: newVal });
+  };
+
   const handleGoogleLogin = () => {
     const extId = chrome.runtime.id;
-    // In dev mode, we might want localhost? No, bridge logic handles it.
-    // But we need to make sure the Frontend is running on safelog.hashpar.com OR user is using localhost.
-    // For flexibility, let's stick to production bridge for auth, or make it configurable?
-    // MVP: Hardcode production bridge as that's what has the Google Client ID configured (usually).
-    // If user is running locally, they can still use the prod bridge if the extension ID is accepted.
-    // Wait, "externally_connectable" needs to match.
-    // Prod bridge is safer.
-    chrome.tabs.create({ url: `https://safelog.hashpar.com/auth-bridge?ext_id=${extId}` });
+    const baseUrl = devMode ? 'http://localhost:5173' : 'https://safelog.hashpar.com';
+    chrome.tabs.create({ url: `${baseUrl}/auth-bridge?ext_id=${extId}` });
   };
 
   return (
@@ -195,6 +200,10 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
             <hr style={{ margin: '15px 0', borderColor: '#333' }} />
             <button onClick={() => setMode('backup')} className="secondary-btn" style={{ background: '#4285F4', color: 'white' }}> Backup to Google (MPC)</button>
             <button onClick={() => setMode('restore')} className="text-btn" style={{ marginTop: '10px' }}>Restore from Google</button>
+            <hr style={{ margin: '15px 0', borderColor: '#333' }} />
+            <button onClick={toggleDevMode} className="text-btn" style={{ fontSize: '0.8em', color: devMode ? '#4caf50' : '#666' }}>
+              {devMode ? 'Dev Mode: ON (Localhost)' : 'Dev Mode: OFF (Prod)'}
+            </button>
           </div>
         )}
 
@@ -333,101 +342,35 @@ const Dashboard = () => {
   };
 
   const handleGoogleBackup = async (password, token, cb) => {
-    // 1. Get Private Key (Reuse Export)
-    chrome.runtime.sendMessage({ type: 'EXPORT_KEYS', password }, async (res) => {
-      if (!res || !res.success) return cb(false, res.error || "Export failed");
+    // Determine Environment for logging (App.jsx is UI, so devMode stored in storage)
+    // Actually we just send message. Background handles DevMode check!
 
-      try {
-        // Backup Active Account Only for MVP
-        // Find account with same ID as activeAccount (or just first one if only one)
-        const account = res.accounts.find(a => a.id === activeAccount?.id) || res.accounts[0];
-        if (!account) return cb(false, "No account to backup");
-
-        // We need the Dilithium Private Key (which is the critical identity)
-        // Format in export is Hex string usually.
-        // Convert to bytes
-        const privKeyBytes = fromHex(account.dilithiumPrivateKey);
-
-        // 2. Derive Share A
-        const salt = "safelog_mpc_v1";
-        const shareA = await deriveShareA(password, salt, privKeyBytes.length);
-
-        // 3. Create Share B
-        const shareB = createShareB(privKeyBytes, shareA);
-        const shareBHex = toHex(shareB);
-
-        // 4. Upload to Safelog
-        const apiRes = await fetch('https://safeapi.hashpar.com/recovery/store', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token, share_data: JSON.stringify({
-              // Wrap in object to store metadata or other keys later
-              type: 'dilithium_mpc',
-              shareB: shareBHex,
-              name: account.name,
-              dilithiumPublicKey: account.dilithiumPublicKey,
-              kyberPublicKey: account.kyberPublicKey,
-              kyberShareB: toHex(createShareB(fromHex(account.kyberPrivateKey), await deriveShareA(password, salt + "_kyber", fromHex(account.kyberPrivateKey).length)))
-            })
-          })
-        });
-
-        if (apiRes.ok) cb(true);
-        else cb(false, "Upload failed: " + apiRes.status);
-
-      } catch (e) {
-        console.error(e);
-        cb(false, e.message);
+    chrome.runtime.sendMessage({
+      type: 'BACKUP_TO_GOOGLE',
+      password,
+      token
+    }, (res) => {
+      if (res && res.success) {
+        cb(true);
+      } else {
+        cb(false, res ? res.error : "Backup request failed");
       }
     });
   };
 
   const handleGoogleRestore = async (password, token, cb) => {
-    try {
-      // 1. Fetch form Safelog
-      const apiRes = await fetch('https://safeapi.hashpar.com/recovery/fetch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token })
-      });
-
-      if (!apiRes.ok) return cb(false, "Fetch failed (Check Token)");
-      const { share_data } = await apiRes.json();
-      const backupData = JSON.parse(share_data);
-
-      // 2. Recover Keys
-      const salt = "safelog_mpc_v1";
-
-      // Dilithium
-      const dimShareB = fromHex(backupData.shareB);
-      const dimShareA = await deriveShareA(password, salt, dimShareB.length);
-      const dimPrivKey = recoverSecret(dimShareA, dimShareB);
-
-      // Kyber
-      const kybShareB = fromHex(backupData.kyberShareB);
-      const kybShareA = await deriveShareA(password, salt + "_kyber", kybShareB.length);
-      const kybPrivKey = recoverSecret(kybShareA, kybShareB);
-
-      // 3. Reconstruct Account Objects
-      const newAccount = {
-        id: Date.now(), // Generate new local ID
-        name: backupData.name + " (Recovered)",
-        dilithiumPublicKey: backupData.dilithiumPublicKey,
-        dilithiumPrivateKey: toHex(dimPrivKey),
-        kyberPublicKey: backupData.kyberPublicKey,
-        kyberPrivateKey: toHex(kybPrivKey),
-        active: true
-      };
-
-      // 4. Import
-      handleImportKeys([newAccount]);
-      cb(true);
-
-    } catch (e) {
-      console.error(e);
-      cb(false, e.message);
-    }
+    chrome.runtime.sendMessage({
+      type: 'RESTORE_FROM_GOOGLE',
+      password,
+      token
+    }, (res) => {
+      if (res && res.success) {
+        fetchAccounts(); // Refresh
+        cb(true);
+      } else {
+        cb(false, res ? res.error : "Restore request failed");
+      }
+    });
   };
 
   return (

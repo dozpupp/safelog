@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 const AuthBridge = () => {
     const [status, setStatus] = useState('initializing');
     const [extId, setExtId] = useState(null);
+    const [errorMessage, setErrorMessage] = useState('');
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -17,8 +18,11 @@ const AuthBridge = () => {
         const initGsi = () => {
             if (!window.google) return;
             try {
+                // Use env var or fallback (which will likely fail on custom domains)
+                const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "277636686001-av155j3451d80d26bdl764k1kdd2862d.apps.googleusercontent.com";
+
                 window.google.accounts.id.initialize({
-                    client_id: "277636686001-av155j3451d80d26bdl764k1kdd2862d.apps.googleusercontent.com",
+                    client_id: clientId,
                     callback: handleCredentialResponse
                 });
 
@@ -64,19 +68,29 @@ const AuthBridge = () => {
     const handleCredentialResponse = (response) => {
         console.log("Encoded JWT ID token: " + response.credential);
 
+        // Fix: Read ID directly from URL to avoid stale closure (useEffect captures initial null state)
+        const params = new URLSearchParams(window.location.search);
+        const currentExtId = params.get('ext_id');
+
         // Send to Extension
-        if (extId && window.chrome && window.chrome.runtime) {
+        if (currentExtId && window.chrome && window.chrome.runtime) {
             setStatus('sending');
-            window.chrome.runtime.sendMessage(extId, {
+            window.chrome.runtime.sendMessage(currentExtId, {
                 type: "OAUTH_SUCCESS",
                 token: response.credential
             }, (res) => {
-                // Callback might not fire if extension is not listening or externally_connectable mismatch
-                // accessible from content script? No, sendMessage to specific ID works from web IF externally_connectable.
+                // If lastError is set, usage failed
                 if (window.chrome.runtime.lastError) {
                     console.error(window.chrome.runtime.lastError);
+                    setErrorMessage(window.chrome.runtime.lastError.message || "Unknown Runtime Error");
                     setStatus('send_error');
-                } else {
+                }
+                // If response has { success: false }
+                else if (res && !res.success) {
+                    setErrorMessage(res.error || "Extension returned failure");
+                    setStatus('send_error');
+                }
+                else {
                     setStatus('success');
                 }
             });
@@ -129,14 +143,43 @@ const AuthBridge = () => {
 
             <div id="buttonDiv" style={{ display: status === 'ready' ? 'block' : 'none' }}></div>
 
+            {status === 'success' && (
+                <div style={{ textAlign: 'center', color: '#4caf50' }}>
+                    <h3>✓ Connection Successful</h3>
+                    <p>You have signed in to TrustKeys.</p>
+                    <p style={{ fontSize: '0.8em', marginTop: '10px', color: '#aaa' }}>You can now close this tab.</p>
+                </div>
+            )}
+
             {status === 'success_sent' && (
                 <div style={{ textAlign: 'center', color: '#4caf50' }}>
-                    <h3>✓ Connected!</h3>
+                    <h3>✓ Connected (Fallback)</h3>
+                    <p>Token ready.</p>
                 </div>
             )}
 
             {status === 'send_error' && (
-                <p style={{ color: 'orange' }}>Token received, but failed to send to extension.</p>
+                <div style={{ color: 'orange', textAlign: 'center' }}>
+                    <p>Token received, but failed to send to extension.</p>
+                    <p style={{ fontSize: '0.8em', marginTop: '10px' }}>Error Details:</p>
+                    <pre style={{ background: '#333', padding: '10px', borderRadius: '4px' }}>
+                        {errorMessage}
+                    </pre>
+                </div>
+            )}
+
+            {status === 'error_bridge' && (
+                <div style={{ color: 'red', textAlign: 'center' }}>
+                    <p>Bridge Error: Extension not detected.</p>
+                    <p style={{ fontSize: '0.8em' }}>
+                        Missing:
+                        {!window.chrome ? ' window.chrome' : ''}
+                        {window.chrome && !window.chrome.runtime ? ' chrome.runtime' : ''}
+                    </p>
+                    <p style={{ fontSize: '0.8em', marginTop: '10px' }}>
+                        Did you <strong>Reload the Extension</strong> in chrome://extensions?
+                    </p>
+                </div>
             )}
 
             {status === 'error_gsi' && (
