@@ -96,10 +96,14 @@ const DecryptScreen = ({ requestId, requestData, onResolve }) => {
   );
 };
 
-const SettingsModal = ({ onClose, onExport, onImport }) => {
+
+import { deriveShareA, createShareB, recoverSecret, toHex, fromHex } from './utils/mpc';
+
+const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRestore, loading }) => {
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState('menu'); // menu, export
+  const [mode, setMode] = useState('menu'); // menu, export, backup, restore
   const [error, setError] = useState('');
+  const [token, setToken] = useState(''); // Google ID Token (Simulated Input)
 
   const handleExport = () => {
     if (!password) return setError("Password required");
@@ -125,6 +129,30 @@ const SettingsModal = ({ onClose, onExport, onImport }) => {
     reader.readAsText(file);
   };
 
+  const handleBackup = () => {
+    if (!password || !token) return setError("Password and Token required");
+    onGoogleBackup(password, token, (success, err) => {
+      if (success) {
+        alert("Backup successful!");
+        onClose();
+      } else {
+        setError(err || "Backup failed");
+      }
+    });
+  };
+
+  const handleRestore = () => {
+    if (!password || !token) return setError("Password and Token required");
+    onGoogleRestore(password, token, (success, err) => {
+      if (success) {
+        alert("Restore successful!");
+        onClose();
+      } else {
+        setError(err || "Restore failed");
+      }
+    });
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal">
@@ -133,11 +161,14 @@ const SettingsModal = ({ onClose, onExport, onImport }) => {
 
         {mode === 'menu' && (
           <div className="settings-menu">
-            <button onClick={() => setMode('export')} className="danger-btn">Export Keys</button>
+            <button onClick={() => setMode('export')} className="danger-btn">Export Keys (JSON)</button>
             <label className="primary-btn" style={{ display: 'block', textAlign: 'center', marginTop: '10px', cursor: 'pointer' }}>
-              Import Keys
+              Import Keys (JSON)
               <input type="file" style={{ display: 'none' }} onChange={handleImport} accept=".json" />
             </label>
+            <hr style={{ margin: '15px 0', borderColor: '#333' }} />
+            <button onClick={() => setMode('backup')} className="secondary-btn" style={{ background: '#4285F4', color: 'white' }}> Backup to Google (MPC)</button>
+            <button onClick={() => setMode('restore')} className="text-btn" style={{ marginTop: '10px' }}>Restore from Google</button>
           </div>
         )}
 
@@ -145,24 +176,39 @@ const SettingsModal = ({ onClose, onExport, onImport }) => {
           <div className="export-flow">
             <div className="warning-box">
               <strong>⚠️ SECURITY WARNING</strong>
-              <p>You are about to export your private keys in plain text. Anyone with this file can access your account.</p>
+              <p>You are about to export your private keys in plain text.</p>
             </div>
             <p>Enter password to confirm:</p>
-            <input
-              type="password"
-              value={password}
-              onChange={e => { setPassword(e.target.value); setError('') }}
-              placeholder="Password"
-            />
+            <input type="password" value={password} onChange={e => { setPassword(e.target.value); setError('') }} placeholder="Password" />
             {error && <div className="error">{error}</div>}
             <button onClick={handleExport} className="danger-btn">Confirm Export</button>
             <button onClick={() => setMode('menu')} className="text-btn">Back</button>
           </div>
         )}
+
+        {(mode === 'backup' || mode === 'restore') && (
+          <div className="export-flow">
+            <h3>{mode === 'backup' ? 'Google Backup' : 'Google Restore'}</h3>
+            <p>1. Enter your TrustKeys Password.</p>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="TrustKeys Password" />
+
+            <p>2. Enter Google ID Token (For Demo/MVP):</p>
+            {/* In production, this would be a "Sign in with Google" button that auto-fills or handles auth internally */}
+            <input type="text" value={token} onChange={e => setToken(e.target.value)} placeholder="Paste Google ID Token..." style={{ fontSize: '0.8em' }} />
+
+            {error && <div className="error">{error}</div>}
+            <button onClick={mode === 'backup' ? handleBackup : handleRestore} className="primary-btn" disabled={loading}>
+              {loading ? 'Processing...' : (mode === 'backup' ? 'Encrypt & Upload' : 'Download & Decrypt')}
+            </button>
+            <button onClick={() => setMode('menu')} className="text-btn">Back</button>
+          </div>
+        )}
+
       </div>
     </div>
   );
 };
+
 
 const Dashboard = () => {
   const [accounts, setAccounts] = useState([]);
@@ -251,6 +297,104 @@ const Dashboard = () => {
         alert(`Import failed: ${res.error}`);
       }
     });
+  };
+
+  const handleGoogleBackup = async (password, token, cb) => {
+    // 1. Get Private Key (Reuse Export)
+    chrome.runtime.sendMessage({ type: 'EXPORT_KEYS', password }, async (res) => {
+      if (!res || !res.success) return cb(false, res.error || "Export failed");
+
+      try {
+        // Backup Active Account Only for MVP
+        // Find account with same ID as activeAccount (or just first one if only one)
+        const account = res.accounts.find(a => a.id === activeAccount?.id) || res.accounts[0];
+        if (!account) return cb(false, "No account to backup");
+
+        // We need the Dilithium Private Key (which is the critical identity)
+        // Format in export is Hex string usually.
+        // Convert to bytes
+        const privKeyBytes = fromHex(account.dilithiumPrivateKey);
+
+        // 2. Derive Share A
+        const salt = "safelog_mpc_v1";
+        const shareA = await deriveShareA(password, salt, privKeyBytes.length);
+
+        // 3. Create Share B
+        const shareB = createShareB(privKeyBytes, shareA);
+        const shareBHex = toHex(shareB);
+
+        // 4. Upload to Safelog
+        const apiRes = await fetch('https://safeapi.hashpar.com/recovery/store', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token, share_data: JSON.stringify({
+              // Wrap in object to store metadata or other keys later
+              type: 'dilithium_mpc',
+              shareB: shareBHex,
+              name: account.name,
+              dilithiumPublicKey: account.dilithiumPublicKey,
+              kyberPublicKey: account.kyberPublicKey,
+              kyberShareB: toHex(createShareB(fromHex(account.kyberPrivateKey), await deriveShareA(password, salt + "_kyber", fromHex(account.kyberPrivateKey).length)))
+            })
+          })
+        });
+
+        if (apiRes.ok) cb(true);
+        else cb(false, "Upload failed: " + apiRes.status);
+
+      } catch (e) {
+        console.error(e);
+        cb(false, e.message);
+      }
+    });
+  };
+
+  const handleGoogleRestore = async (password, token, cb) => {
+    try {
+      // 1. Fetch form Safelog
+      const apiRes = await fetch('https://safeapi.hashpar.com/recovery/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+
+      if (!apiRes.ok) return cb(false, "Fetch failed (Check Token)");
+      const { share_data } = await apiRes.json();
+      const backupData = JSON.parse(share_data);
+
+      // 2. Recover Keys
+      const salt = "safelog_mpc_v1";
+
+      // Dilithium
+      const dimShareB = fromHex(backupData.shareB);
+      const dimShareA = await deriveShareA(password, salt, dimShareB.length);
+      const dimPrivKey = recoverSecret(dimShareA, dimShareB);
+
+      // Kyber
+      const kybShareB = fromHex(backupData.kyberShareB);
+      const kybShareA = await deriveShareA(password, salt + "_kyber", kybShareB.length);
+      const kybPrivKey = recoverSecret(kybShareA, kybShareB);
+
+      // 3. Reconstruct Account Objects
+      const newAccount = {
+        id: Date.now(), // Generate new local ID
+        name: backupData.name + " (Recovered)",
+        dilithiumPublicKey: backupData.dilithiumPublicKey,
+        dilithiumPrivateKey: toHex(dimPrivKey),
+        kyberPublicKey: backupData.kyberPublicKey,
+        kyberPrivateKey: toHex(kybPrivKey),
+        active: true
+      };
+
+      // 4. Import
+      handleImportKeys([newAccount]);
+      cb(true);
+
+    } catch (e) {
+      console.error(e);
+      cb(false, e.message);
+    }
   };
 
   return (
