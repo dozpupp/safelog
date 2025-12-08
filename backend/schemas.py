@@ -75,3 +75,14 @@ class LoginRequest(BaseModel):
     signature: str
     nonce: str
     encryption_public_key: Optional[str] = None
+
+class RecoveryShareStore(BaseModel):
+    token: str # Google ID Token
+    share_data: str
+
+class RecoveryShareFetch(BaseModel):
+    token: str
+
+class RecoveryShareResponse(BaseModel):
+    share_data: str
+

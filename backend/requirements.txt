@@ -5,3 +5,4 @@ pydantic
 eth-account
 web3
 python-multipart
+requests
