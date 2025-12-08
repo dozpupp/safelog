@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react'
 import './App.css'
-// --- MPC Utilities via Background ---
-// Logic moved to background to avoid React build crashes
 
 // --- Components ---
 
@@ -98,14 +96,42 @@ const DecryptScreen = ({ requestId, requestData, onResolve }) => {
   );
 };
 
-
-
+// Default Configuration
+const DEFAULT_API_URL = 'http://localhost:8000';
+const DEFAULT_BRIDGE_URL = 'http://localhost:5173';
 
 const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRestore, loading }) => {
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState('menu'); // menu, export, backup, restore
+  const [mode, setMode] = useState('menu'); // menu, export, backup, restore, config
   const [error, setError] = useState('');
   const [token, setToken] = useState(''); // Google ID Token (Simulated Input)
+
+  // Config State
+  const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
+  const [bridgeUrl, setBridgeUrl] = useState(DEFAULT_BRIDGE_URL);
+  const [showConfig, setShowConfig] = useState(false);
+
+  useEffect(() => {
+    // Check for stored token and config
+    chrome.storage.local.get(['googleToken', 'apiUrl', 'bridgeUrl'], (res) => {
+      if (res.googleToken) setToken(res.googleToken);
+      if (res.apiUrl) setApiUrl(res.apiUrl);
+      if (res.bridgeUrl) setBridgeUrl(res.bridgeUrl);
+    });
+
+    // Listen for changes
+    const listener = (changes) => {
+      if (changes.googleToken) setToken(changes.googleToken.newValue);
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, []);
+
+  const saveConfig = () => {
+    chrome.storage.local.set({ apiUrl, bridgeUrl }, () => {
+      setShowConfig(false);
+    });
+  };
 
   const handleExport = () => {
     if (!password) return setError("Password required");
@@ -155,33 +181,13 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
     });
   };
 
-  const [devMode, setDevMode] = useState(false);
-
-  useEffect(() => {
-    // Check for stored token and dev mode preference
-    chrome.storage.local.get(['googleToken', 'devMode'], (res) => {
-      if (res.googleToken) setToken(res.googleToken);
-      if (res.devMode) setDevMode(res.devMode);
-    });
-
-    // Listen for changes
-    const listener = (changes) => {
-      if (changes.googleToken) setToken(changes.googleToken.newValue);
-    };
-    chrome.storage.onChanged.addListener(listener);
-    return () => chrome.storage.onChanged.removeListener(listener);
-  }, []);
-
-  const toggleDevMode = () => {
-    const newVal = !devMode;
-    setDevMode(newVal);
-    chrome.storage.local.set({ devMode: newVal });
-  };
-
   const handleGoogleLogin = () => {
     const extId = chrome.runtime.id;
-    const baseUrl = devMode ? 'http://localhost:5173' : 'https://safelog.hashpar.com';
-    chrome.tabs.create({ url: `${baseUrl}/auth-bridge?ext_id=${extId}` });
+    // Use configured bridge URL or default
+    const base = bridgeUrl || DEFAULT_BRIDGE_URL;
+    // Ensure no trailing slash for clean concat? Or just use template literal carefully.
+    const url = `${base}/auth-bridge?ext_id=${extId}`;
+    chrome.tabs.create({ url });
   };
 
   return (
@@ -190,7 +196,7 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
         <button className="close-btn" onClick={onClose}>×</button>
         <h3>Settings</h3>
 
-        {mode === 'menu' && (
+        {mode === 'menu' && !showConfig && (
           <div className="settings-menu">
             <button onClick={() => setMode('export')} className="danger-btn">Export Keys (JSON)</button>
             <label className="primary-btn" style={{ display: 'block', textAlign: 'center', marginTop: '10px', cursor: 'pointer' }}>
@@ -198,12 +204,28 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
               <input type="file" style={{ display: 'none' }} onChange={handleImport} accept=".json" />
             </label>
             <hr style={{ margin: '15px 0', borderColor: '#333' }} />
-            <button onClick={() => setMode('backup')} className="secondary-btn" style={{ background: '#4285F4', color: 'white' }}> Backup to Google (MPC)</button>
-            <button onClick={() => setMode('restore')} className="text-btn" style={{ marginTop: '10px' }}>Restore from Google</button>
+            <button onClick={() => setMode('backup')} className="secondary-btn" style={{ background: '#4285F4', color: 'white' }}> Backup with Google ID (MPC)</button>
+            <button onClick={() => setMode('restore')} className="text-btn" style={{ marginTop: '10px' }}>Restore with Google ID</button>
             <hr style={{ margin: '15px 0', borderColor: '#333' }} />
-            <button onClick={toggleDevMode} className="text-btn" style={{ fontSize: '0.8em', color: devMode ? '#4caf50' : '#666' }}>
-              {devMode ? 'Dev Mode: ON (Localhost)' : 'Dev Mode: OFF (Prod)'}
+            <button onClick={() => setShowConfig(true)} className="text-btn" style={{ fontSize: '0.8em', color: '#888' }}>
+              Config (API & Bridge)
             </button>
+          </div>
+        )}
+
+        {showConfig && (
+          <div className="config-form" style={{ textAlign: 'left' }}>
+            <h4>Configuration</h4>
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ fontSize: '0.8em', color: '#aaa' }}>API URL (Backend)</label>
+              <input type="text" value={apiUrl} onChange={e => setApiUrl(e.target.value)} style={{ width: '100%', padding: '6px' }} />
+            </div>
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ fontSize: '0.8em', color: '#aaa' }}>Bridge URL (Frontend)</label>
+              <input type="text" value={bridgeUrl} onChange={e => setBridgeUrl(e.target.value)} style={{ width: '100%', padding: '6px' }} />
+            </div>
+            <button onClick={saveConfig} className="primary-btn">Save</button>
+            <button onClick={() => setShowConfig(false)} className="text-btn">Cancel</button>
           </div>
         )}
 
@@ -223,7 +245,7 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
 
         {(mode === 'backup' || mode === 'restore') && (
           <div className="export-flow">
-            <h3>{mode === 'backup' ? 'Google Backup' : 'Google Restore'}</h3>
+            <h3>{mode === 'backup' ? 'Backup with Google ID' : 'Restore with Google ID'}</h3>
             <p>1. Enter your TrustKeys Password.</p>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="TrustKeys Password" />
 
@@ -250,7 +272,6 @@ const SettingsModal = ({ onClose, onExport, onImport, onGoogleBackup, onGoogleRe
     </div>
   );
 };
-
 
 const Dashboard = () => {
   const [accounts, setAccounts] = useState([]);
@@ -341,38 +362,6 @@ const Dashboard = () => {
     });
   };
 
-  const handleGoogleBackup = async (password, token, cb) => {
-    // Determine Environment for logging (App.jsx is UI, so devMode stored in storage)
-    // Actually we just send message. Background handles DevMode check!
-
-    chrome.runtime.sendMessage({
-      type: 'BACKUP_TO_GOOGLE',
-      password,
-      token
-    }, (res) => {
-      if (res && res.success) {
-        cb(true);
-      } else {
-        cb(false, res ? res.error : "Backup request failed");
-      }
-    });
-  };
-
-  const handleGoogleRestore = async (password, token, cb) => {
-    chrome.runtime.sendMessage({
-      type: 'RESTORE_FROM_GOOGLE',
-      password,
-      token
-    }, (res) => {
-      if (res && res.success) {
-        fetchAccounts(); // Refresh
-        cb(true);
-      } else {
-        cb(false, res ? res.error : "Restore request failed");
-      }
-    });
-  };
-
   return (
     <div className="dashboard">
       <div className="header">
@@ -389,6 +378,21 @@ const Dashboard = () => {
           onClose={() => setShowSettings(false)}
           onExport={handleExportKeys}
           onImport={handleImportKeys}
+          onGoogleBackup={(password, token, cb) => {
+            setLoading(true);
+            chrome.runtime.sendMessage({ type: 'BACKUP_TO_GOOGLE', password, token }, (res) => {
+              setLoading(false);
+              cb(res && res.success, res?.error);
+            });
+          }}
+          onGoogleRestore={(password, token, cb) => {
+            setLoading(true);
+            chrome.runtime.sendMessage({ type: 'RESTORE_FROM_GOOGLE', password, token }, (res) => {
+              setLoading(false);
+              cb(res && res.success, res?.error);
+            });
+          }}
+          loading={loading}
         />
       )}
 

@@ -7,16 +7,13 @@ A secure secret management and document signing application featuring **Quantum-
 - 🔐 **Dual Authentication** - Login with **MetaMask** (Ethereum) or **TrustKeys** (Post-Quantum).
 - 🧬 **Quantum-Proof Cryptography** - Integration with **Crystals-Kyber** (ML-KEM) and **Crystals-Dilithium** (ML-DSA).
 - 🛡️ **Secure Vault** - Client-side encryption ensures the server never sees your secrets.
+- 📂 **File Vault** - Securely upload, encrypt, and share files (Images, PDFs, etc.).
+- 💣 **Timebomb Access** - Share secrets with self-destruct timers (Ephemeral Access).
+- ☁️ **MPC Recovery** - Backup your PQC identity using **Google ID** (Multi-Party Computation) without entrusting your full key to any single party.
 - 💾 **Hybrid Encryption** -  
   - Standard Users: ECDH + AES (MetaMask).
   - PQC Users: Kyber-768 Encapsulation + AES-GCM (TrustKeys).
-- 🤝 **Advanced Secret Management**
-  - **Edit & Delete**: Full control over your stored secrets.
-  - **Secure Sharing**: Share encrypted secrets between any user type (Eth ↔ PQC).
-  - **File Uploads**: Securely encrypt, store, and share files (Images, PDFs, etc.).
-  - **Timebomb**: Share secrets with an automatic expiration timer (5 min, 1 hour, 1 day).
-  - **Revocation**: View who has access to your secrets and revoke their access individually.
-  - **Access List**: See exact usernames and expiry times for shared secrets.
+- 🤝 **Secure Sharing** - Share encrypted secrets between any user type (Eth ↔ PQC).
 - 👤 **User Profiles** - Manage usernames and view PQC identities.
 
 ## Tech Stack
@@ -35,7 +32,7 @@ A secure secret management and document signing application featuring **Quantum-
 - **Browser Extension** - Manages PQC keys securely.
 - **WASM Cryptography** - High-performance ML-KEM and ML-DSA implementation.
 - **Encrypted Vault** - AES-256-GCM protection for private keys.
-- **Import/Export** - Backup and restore your quantum-safe identity.
+- **MPC Recovery** - Google-authenticated key reconstruction.
 
 ## Getting Started
 
@@ -60,9 +57,6 @@ A secure secret management and document signing application featuring **Quantum-
    cp .env.example .env
    pip3 install -r requirements.txt
    
-   # Install Node.js dependencies (for PQC Bridge)
-   npm install
-
    # Initialize DB
    python3 create_database.py
    ```
@@ -92,89 +86,94 @@ SafeLog employs a **Zero-Trust** architecture. All data is encrypted client-side
 - **Authentication**: Uses digital signatures (ECDSA for Eth, Dilithium-2 for TrustKeys) to prove identity without exchanging passwords.
 - **Data Protection**: Secrets are encrypted using a recipient's public key (encryption key) before hitting the database.
 - **Post-Quantum Readiness**: Ready for the future with NIST-standardized algorithms (ML-KEM, ML-DSA).
-- **Active Cleanup**: Expired shared secrets (Timebomb) are actively purged from the database to enforce access limits.
+
+### Configuration
+
+1. **Configure Backend URL (Frontend)**:
+   Edit `frontend/.env` and set `VITE_API_BASE_URL` to the public URL of your backend.
+   ```
+   VITE_API_BASE_URL=https://api.yourdomain.com
+   ```
+
+2. **Configure Allowed Hosts (Frontend)**:
+   If accessing via a specific domain (e.g. `safelog.hashpar.com`), add it to `ALLOWED_HOSTS` in `frontend/.env` to prevent "Blocked request" errors from Vite.
+   ```
+   ALLOWED_HOSTS=safelog.hashpar.com
+   ```
+
+3. **Configure CORS (Backend)**:
+   The backend restricts access to known origins. To allow your frontend domain to make requests, set `ALLOWED_ORIGINS` environment variable when running the backend.
+   ```bash
+   export ALLOWED_ORIGINS="http://yourdomain.com,http://another-domain.com"
+   python3 -m uvicorn main:app --reload --port 8000
+   ```
+   *Note: `localhost:5173` is allowed by default.*
+
+4. **Run with Host Exposure**:
+   By default, Vite only listens on localhost. To access it externally, run:
+   ```bash
+   npm run dev -- --host
+   ```
 
 ## Usage
 
 ### Login
 1. Click "Connect Wallet"
-2. Approve MetaMask connection
+2. Approve MetaMask connection or TrustKeys Unlock
 3. Sign the authentication message
 4. Approve encryption public key request
 
 ### Create a Secret
 1. Click "+ New Secret"
-2. Enter a name and content
-3. Click "Save Secret"
-4. Secret is encrypted client-side and stored
-
-### Upload a File
-1. Click "+ New Secret"
-2. Toggle content type to **File**
-3. Select a file from your device
-4. Enter a name and click "Encrypt & Save"
-5. **Download**: To retrieve, decrypt the secret and click the "Download" button.
+2. Enter a name and content OR Upload a file (Image/PDF)
+3. (Optional) Set an Expiry Time (Timebomb)
+4. Click "Encrypt & Save"
 
 ### Share a Secret
-1. Click the "Share" icon
-2. Search for a user (Standard or PQC)
-3. (Optional) Set an Expiry Time (Timebomb)
-4. Click "Share Secret"
-5. The secret is securely re-encrypted for the recipient
+1. Click the Share icon on a secret
+2. Search for a user by username or address
+3. Select the user and click "Share"
+4. The secret is securely re-encrypted for the recipient
 
-### Managing Access
-1. Open the "Manage Access" modal (Share icon).
-2. View the list of users with access.
-3. Check expiry times (HH:MM:SS format).
-4. Click the Trash icon to **Revoke** access for a specific user.
+### View a Secret
+1. Click the unlock 🔓 button
+2. Approve decryption
+3. Decrypted content appears below
+4. (For Files) Click "Download Decrypted File"
 
-## API Endpoints
+## Security
 
-### Authentication
-- `GET /auth/nonce/{address}` - Get signing nonce
-- `POST /auth/login` - Authenticate with signature
+- **No Plain Text Storage** - All secrets are encrypted before leaving your browser
+- **Private Keys Never Exposed** - Encryption/decryption happens via MetaMask or TrustKeys Extension
+- **Client-Side Encryption** - Server never sees your plain text data
+- **Signature-Based Auth** - No passwords, uses Ethereum or PQC signatures
 
-### Secrets
-- `POST /secrets` - Create encrypted secret
-- `GET /secrets/{address}` - List user's secrets
-- `PUT /secrets/{secret_id}` - Update secret (Owner only)
-- `DELETE /secrets/{secret_id}` - Delete secret (Owner only)
-- `GET /secrets/{secret_id}/access` - Get access list (including expiry)
+## Project Structure
 
-### Sharing
-- `POST /secrets/share` - Share secret with another user (supports `expires_in`)
-- `GET /secrets/shared-with/{address}` - List secrets shared with user
-- `DELETE /secrets/share/{grant_id}` - Revoke access (Owner or Expiry)
-
-### Users
-- `GET /users` - Search users (supports pagination `limit` & `offset`)
-- `GET /users/{address}` - Get user details
-- `PUT /users/{address}` - Update user profile
-
-## Development
-
-### Backend Development
-```bash
-cd backend
-python3 -m uvicorn main:app --reload
 ```
-
-### Frontend Development
-```bash
-cd frontend
-npm run dev
+safelog/
+├── backend/
+│   ├── main.py           # API routes
+│   ├── models.py         # Database models
+│   ├── schemas.py        # Pydantic schemas
+│   ├── auth.py           # Authentication logic
+│   └── database.py       # Database setup
+└── frontend/
+    ├── src/
+    │   ├── components/   # React components
+    │   ├── context/      # Auth & Crypto contexts
+    │   ├── utils/        # Crypto utilities (PQC, MPC)
+    │   └── App.jsx
+    └── vite.config.js
 ```
 
 ## Future Enhancements
 
 - [x] Secret sharing with other users
 - [x] User profiles
-- [x] Post-Quantum Cryptography (TrustKeys)
-- [x] Time-limited Access (Timebomb)
-- [x] Secret Management (Edit/Delete/Revoke)
-- [x] File Uploads (Encrypted Storage)
+- [x] File Sharing
+- [x] Timebomb (Ephemeral) Access
 - [ ] Document signing UI
-- [ ] Session management with JWT
 - [ ] PostgreSQL support
 - [ ] Mobile-responsive improvements
 

@@ -34,6 +34,7 @@ The application state is managed through three distinct contexts to separate con
 - **`Dashboard.jsx`**: Main secure area. 
   - Dynamically switches encryption/decryption logic based on `authType`.
   - Adapts UI labels (e.g., "Wallet Address" vs "ML-DSA ID").
+- **`AuthBridge.jsx`**: **New** - Handles Google OAuth Callback for TrustKeys Extension (MPC).
 - **`utils/crypto.js`**: Helper functions for standard Ethereum cryptography.
 
 ## Development
@@ -46,15 +47,29 @@ npm install
 
 # Setup environment
 cp .env.example .env
+```
 
+### Environment Variables
+
+Edit `.env`:
+```ini
+VITE_API_BASE_URL=http://localhost:8000
+VITE_GOOGLE_CLIENT_ID=your_google_client_id  # For TrustKeys MPC Backup
+ALLOWED_HOSTS=localhost,safelog.hashpar.com
+```
+
+### Run
+
+```bash
 # Run dev server
 npm run dev
 ```
 
-### Key Features
+## Key Features
 
 - **Profile Management**: Users can update their username.
 - **Secret Sharing**: Secrets are re-encrypted client-side for the recipient.
+- **File Vault**: Upload, Encrypt, and Timebomb files.
 - **Truncated Display**: Long keys (Ethereum and PQC) are visually truncated (e.g., `0x123...456`) but full keys are available via copy-to-clipboard.
 
 ## TrustKeys Integration
@@ -67,3 +82,7 @@ The frontend detects the `window.trustkeys` API injected by the browser extensio
   2. Frontend requests Account Info.
   3. Frontend signs a Nonce with Dilithium (`sign()`).
   4. Backend validates signature via Node bridge.
+- **MPC Recovery Bridge**:
+  - The frontend hosts the `/auth-bridge` route.
+  - The Extension opens this route to perform Google Login.
+  - The Bridge sends the ID Token back to the Extension securely.

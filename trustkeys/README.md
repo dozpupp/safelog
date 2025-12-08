@@ -2,7 +2,7 @@
 
 TrustKeys is a quantum-resistant browser extension designed to secure Web3 interactions against future quantum computing threats. It implements the **Module-Lattice-based Key Encapsulation Mechanism (ML-KEM)** and **Digital Signature Algorithm (ML-DSA)** standards.
 
-> **Status**: Integrated & Functional
+> **Status**: Beta (Production Functional)
 > **Algorithms**: Crystals-Kyber-768 (ML-KEM) & Crystals-Dilithium-2 (ML-DSA)
 > **Role**: Primary PQC Authentication Provider for SafeLog.
 
@@ -24,7 +24,14 @@ TrustKeys utilizes the NIST multi-round selected algorithms for post-quantum sec
 - **Key Derivation**: Your password derives the encryption key using **PBKDF2** (SHA-256, 100,000 iterations).
 - **Memory-Only Decryption**: Private keys are decrypted into memory *only* when the vault is unlocked and are cleared immediately upon locking.
 
-### 3. Authorization Model
+### 3. MPC Recovery (Google Backup)
+TrustKeys supports **Multi-Party Computation (MPC)** based recovery.
+- **How it works**: Your Vault Key is split into shares.
+- **Google Share**: One share is encrypted and stored associated with your Google ID.
+- **Data Privacy**: Google *never* sees your private keys. They only authenticate your identity to retrieve an encrypted shard.
+- **Restoration**: You can restore your PQC identity on a new device by authenticating with Google.
+
+### 4. Authorization Model
 TrustKeys enforces a strict "User Consent" model similar to Ethereum wallets:
 - **Connection**: Websites cannot access your account or public keys until you explicitly approve a `connect()` request.
 - **Transaction Approval**: Every usage of a private key (Signing or Decrypting) triggers a popup requiring your manual confirmation.
@@ -55,6 +62,13 @@ TrustKeys enforces a strict "User Consent" model similar to Ethereum wallets:
 1. **Setup**: Click the extension icon. You will be prompted to create a password on first run.
 2. **Dashboard**: Once unlocked, you can view your **ML-KEM** and **ML-DSA** public keys.
 3. **Account Management**: You can generate multiple PQC accounts inside the vault.
+
+### Configuration
+You can configure the backend API and Frontend Bridge URL in the Settings menu:
+1. Open Extension → Settings (⚙️).
+2. Click **Config (API & Bridge)**.
+3. **API URL**: The backend server URL (Default: `http://localhost:8000`).
+4. **Bridge URL**: The frontend URL hosting the Google OAuth Bridge (Default: `http://localhost:5173`).
 
 ---
 
@@ -106,8 +120,6 @@ const plaintext = await window.trustkeys.decrypt(encryptedObject);
 ## 🔗 Integration Roadmap
 
 TrustKeys is being developed as a core security module for **SafeLog**.
-- **Current**: Standalone Browser Extension (Proof of Concept).
-- **Phase 2**: Integration with SafeLog Web App.
 
 ### 🛠️ Key Management Features
 - **Export Keys**:
@@ -118,11 +130,8 @@ TrustKeys is being developed as a core security module for **SafeLog**.
 - **Import Keys**:
   - Restores accounts from a JSON backup.
   - Merges new accounts into the existing vault.
-
-### 🔗 Integration Roadmap
-- [x] **Export Keys**: Secure password-gated export.
-- [x] **Import Keys**: Restore from JSON.
-- [x] **SafeLog Integration**: Fully integrated with frontend.
+- **MPC Backup**:
+  - Backup/Restore via Google ID.
 
 ---
 
