@@ -15,6 +15,10 @@ export const API_ENDPOINTS = {
         CREATE: `${API_BASE_URL}/secrets`,
         SHARE: `${API_BASE_URL}/secrets/share`,
         SHARED_WITH: (address) => `${API_BASE_URL}/secrets/shared-with/${address}`,
+        ACCESS: (secretId) => `${API_BASE_URL}/secrets/${secretId}/access`,
+        UPDATE: (secretId) => `${API_BASE_URL}/secrets/${secretId}`,
+        DELETE: (secretId) => `${API_BASE_URL}/secrets/${secretId}`,
+        REVOKE: (grantId) => `${API_BASE_URL}/secrets/share/${grantId}`,
     }
 };
 

@@ -6,7 +6,7 @@ window.Buffer = window.Buffer || Buffer;
 
 export const connectWallet = async () => {
     if (!window.ethereum) {
-        throw new Error("MetaMask is not installed");
+        throw new Error("Unable to access key management - verify your key is unlocked");
     }
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
     return accounts[0];
@@ -14,7 +14,7 @@ export const connectWallet = async () => {
 
 export const getEncryptionPublicKey = async (address) => {
     if (!window.ethereum) {
-        throw new Error("MetaMask is not installed");
+        throw new Error("Unable to access key management - verify your key is unlocked");
     }
     try {
         const key = await window.ethereum.request({
@@ -45,7 +45,7 @@ export const encryptData = (data, publicKey) => {
 
 export const decryptData = async (encryptedDataStr, address) => {
     if (!window.ethereum) {
-        throw new Error("MetaMask is not installed");
+        throw new Error("Unable to access key management - verify your key is unlocked");
     }
 
     try {

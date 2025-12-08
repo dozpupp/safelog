@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import datetime, timezone, timedelta
 
 from database import engine, get_db, Base
 import models, schemas, auth
@@ -114,7 +115,7 @@ def get_user(address: str, db: Session = Depends(get_db)):
     return user
 
 @app.get("/users", response_model=List[schemas.UserResponse])
-def list_users(search: str = None, limit: int = 5, db: Session = Depends(get_db)):
+def list_users(search: str = None, limit: int = 5, offset: int = 0, db: Session = Depends(get_db)):
     query = db.query(models.User)
     
     if search:
@@ -124,7 +125,7 @@ def list_users(search: str = None, limit: int = 5, db: Session = Depends(get_db)
             (models.User.username.like(search_pattern))
         )
     
-    return query.limit(limit).all()
+    return query.limit(limit).offset(offset).all()
 
 @app.post("/secrets", response_model=schemas.SecretResponse)
 def create_secret(secret: schemas.SecretCreate, owner_address: str, db: Session = Depends(get_db)):
@@ -148,6 +149,37 @@ def get_secrets(address: str, db: Session = Depends(get_db)):
     # Returns secrets owned by address
     return db.query(models.Secret).filter(models.Secret.owner_address == address.lower()).all()
 
+@app.put("/secrets/{secret_id}", response_model=schemas.SecretResponse)
+def update_secret(secret_id: int, secret_update: schemas.SecretCreate, owner_address: str, db: Session = Depends(get_db)):
+    secret = db.query(models.Secret).filter(models.Secret.id == secret_id).first()
+    if not secret:
+        raise HTTPException(status_code=404, detail="Secret not found")
+    
+    # Check ownership
+    if secret.owner_address.lower() != owner_address.lower():
+         raise HTTPException(status_code=403, detail="Not authorized")
+
+    secret.name = secret_update.name
+    secret.encrypted_data = secret_update.encrypted_data
+    db.commit()
+    db.refresh(secret)
+    return secret
+
+@app.delete("/secrets/{secret_id}")
+def delete_secret(secret_id: int, owner_address: str, db: Session = Depends(get_db)):
+    secret = db.query(models.Secret).filter(models.Secret.id == secret_id).first()
+    if not secret:
+        raise HTTPException(status_code=404, detail="Secret not found")
+    
+    if secret.owner_address.lower() != owner_address.lower():
+         raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Cascade delete grants
+    db.query(models.AccessGrant).filter(models.AccessGrant.secret_id == secret_id).delete()
+    db.delete(secret)
+    db.commit()
+    return {"status": "ok"}
+
 @app.post("/secrets/share", response_model=schemas.AccessGrantResponse)
 def share_secret(grant: schemas.AccessGrantCreate, db: Session = Depends(get_db)):
     # Verify secret exists and caller is owner (skip auth for MVP but assume caller is owner)
@@ -168,21 +200,94 @@ def share_secret(grant: schemas.AccessGrantCreate, db: Session = Depends(get_db)
     ).first()
     
     if existing_grant:
-        raise HTTPException(status_code=400, detail="Secret already shared with this user")
+        # If trying to share again, maybe update expiration? For now just error or update.
+        # Let's delete old and create new to reset state/expiry
+        db.delete(existing_grant)
+        db.commit()
+
+    expires_at = None
+    if grant.expires_in:
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=grant.expires_in)
 
     new_grant = models.AccessGrant(
         secret_id=grant.secret_id,
         grantee_address=grant.grantee_address.lower(),
-        encrypted_key=grant.encrypted_key
+        encrypted_key=grant.encrypted_key,
+        expires_at=expires_at
     )
     db.add(new_grant)
     db.commit()
     db.refresh(new_grant)
     return new_grant
 
+@app.delete("/secrets/share/{grant_id}")
+def revoke_grant(grant_id: int, caller_address: str, db: Session = Depends(get_db)):
+    grant = db.query(models.AccessGrant).filter(models.AccessGrant.id == grant_id).first()
+    if not grant:
+        raise HTTPException(status_code=404, detail="Grant not found")
+    
+    # Check permissions: Caller must be Secret Owner OR Grantee
+    secret = db.query(models.Secret).filter(models.Secret.id == grant.secret_id).first()
+    
+    is_owner = secret and secret.owner_address.lower() == caller_address.lower()
+    is_grantee = grant.grantee_address.lower() == caller_address.lower()
+    
+    if not (is_owner or is_grantee):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    db.delete(grant)
+    db.commit()
+    return {"status": "ok"}
+
+@app.get("/secrets/{secret_id}/access", response_model=List[schemas.AccessGrantResponse])
+def get_secret_access(secret_id: int, caller_address: str, db: Session = Depends(get_db)):
+    secret = db.query(models.Secret).filter(models.Secret.id == secret_id).first()
+    if not secret:
+        raise HTTPException(status_code=404, detail="Secret not found")
+        
+    if secret.owner_address.lower() != caller_address.lower():
+         raise HTTPException(status_code=403, detail="Not authorized")
+         
+    # Active Cleanup: Delete expired grants
+    now = datetime.now(timezone.utc)
+    all_grants = db.query(models.AccessGrant).filter(models.AccessGrant.secret_id == secret_id).all()
+    
+    active_grants = []
+    dirty = False
+    for grant in all_grants:
+        if grant.expires_at and grant.expires_at.replace(tzinfo=timezone.utc) <= now:
+            db.delete(grant)
+            dirty = True
+        else:
+            active_grants.append(grant)
+    
+    if dirty:
+        db.commit()
+         
+    return active_grants
+
 @app.get("/secrets/shared-with/{address}", response_model=List[schemas.AccessGrantResponse])
 def get_shared_secrets(address: str, db: Session = Depends(get_db)):
-    return db.query(models.AccessGrant).filter(models.AccessGrant.grantee_address == address.lower()).all()
+    now = datetime.now(timezone.utc)
+    
+    grants = db.query(models.AccessGrant).filter(
+        models.AccessGrant.grantee_address == address.lower()
+    ).all()
+    
+    valid_grants = []
+    dirty = False
+    for g in grants:
+        # Check expiry
+        if g.expires_at and g.expires_at.replace(tzinfo=timezone.utc) <= now:
+            db.delete(g)
+            dirty = True
+            continue
+        valid_grants.append(g)
+    
+    if dirty:
+        db.commit()
+            
+    return valid_grants
 
 @app.post("/documents", response_model=schemas.DocumentResponse)
 def create_document(doc: schemas.DocumentCreate, owner_address: str, db: Session = Depends(get_db)):

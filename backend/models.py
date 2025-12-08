@@ -35,6 +35,7 @@ class AccessGrant(Base):
     grantee_address = Column(String, ForeignKey("users.address"))
     encrypted_key = Column(Text) # The secret's key, encrypted for the grantee's public key
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime, nullable=True)
 
     secret = relationship("Secret", back_populates="access_grants")
     grantee = relationship("User", back_populates="access_grants")

@@ -23,7 +23,7 @@ export const PQCProvider = ({ children }) => {
 
     const loginTrustKeys = async () => {
         if (!window.trustkeys) {
-            throw new Error("TrustKeys extension not detected. Please install it first.");
+            throw new Error("Unable to access key management - verify your key is unlocked");
         }
 
         // 1. Connect
@@ -70,13 +70,13 @@ export const PQCProvider = ({ children }) => {
     };
 
     const encrypt = async (content, publicKey) => {
-        if (!window.trustkeys) throw new Error("TrustKeys not available");
+        if (!window.trustkeys) throw new Error("Unable to access key management - verify your key is unlocked");
         // Returns { kem, iv, content } object
         return await window.trustkeys.encrypt(content, publicKey || kyberKey);
     };
 
     const decrypt = async (encryptedObject) => {
-        if (!window.trustkeys) throw new Error("TrustKeys not available");
+        if (!window.trustkeys) throw new Error("Unable to access key management - verify your key is unlocked");
         // encryptedObject must be { kem, iv, content }
         return await window.trustkeys.decrypt(encryptedObject);
     };

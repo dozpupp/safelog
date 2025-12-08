@@ -39,6 +39,7 @@ class AccessGrantCreate(BaseModel):
     secret_id: int
     grantee_address: str
     encrypted_key: str
+    expires_in: Optional[int] = None # Seconds
 
 class AccessGrantResponse(BaseModel):
     id: int
@@ -46,7 +47,9 @@ class AccessGrantResponse(BaseModel):
     grantee_address: str
     encrypted_key: str
     created_at: datetime
+    expires_at: Optional[datetime]
     secret: SecretResponse
+    grantee: Optional[UserResponse]
 
     class Config:
         orm_mode = True
