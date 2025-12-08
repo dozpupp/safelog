@@ -13,6 +13,7 @@ A secure secret management and document signing application featuring **Quantum-
 - 🤝 **Advanced Secret Management**
   - **Edit & Delete**: Full control over your stored secrets.
   - **Secure Sharing**: Share encrypted secrets between any user type (Eth ↔ PQC).
+  - **File Uploads**: Securely encrypt, store, and share files (Images, PDFs, etc.).
   - **Timebomb**: Share secrets with an automatic expiration timer (5 min, 1 hour, 1 day).
   - **Revocation**: View who has access to your secrets and revoke their access individually.
   - **Access List**: See exact usernames and expiry times for shared secrets.
@@ -104,6 +105,13 @@ SafeLog employs a **Zero-Trust** architecture. All data is encrypted client-side
 3. Click "Save Secret"
 4. Secret is encrypted client-side and stored
 
+### Upload a File
+1. Click "+ New Secret"
+2. Toggle content type to **File**
+3. Select a file from your device
+4. Enter a name and click "Encrypt & Save"
+5. **Download**: To retrieve, decrypt the secret and click the "Download" button.
+
 ### Share a Secret
 1. Click the "Share" icon
 2. Search for a user (Standard or PQC)
@@ -161,8 +169,8 @@ npm run dev
 - [x] Post-Quantum Cryptography (TrustKeys)
 - [x] Time-limited Access (Timebomb)
 - [x] Secret Management (Edit/Delete/Revoke)
+- [x] File Uploads (Encrypted Storage)
 - [ ] Document signing UI
-- [ ] Secret files/documents management
 - [ ] Session management with JWT
 - [ ] PostgreSQL support
 - [ ] Mobile-responsive improvements

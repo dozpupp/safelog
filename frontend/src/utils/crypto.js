@@ -1,8 +1,5 @@
 import { encrypt } from '@metamask/eth-sig-util';
-import { Buffer } from 'buffer';
 
-// Polyfill Buffer for browser
-window.Buffer = window.Buffer || Buffer;
 
 export const connectWallet = async () => {
     if (!window.ethereum) {

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useWeb3 } from '../context/Web3Context';
 import { usePQC } from '../context/PQCContext';
 import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypto';
-import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock } from 'lucide-react';
+import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download } from 'lucide-react';
 import API_ENDPOINTS from '../config';
 
 const DisplayField = ({ label, value }) => {
@@ -74,6 +74,10 @@ export default function Dashboard() {
     const [expiry, setExpiry] = useState(0);
     const [userOffset, setUserOffset] = useState(0);
     const [hasMoreUsers, setHasMoreUsers] = useState(true);
+
+    // File Upload State
+    const [contentType, setContentType] = useState('text'); // 'text' | 'file'
+    const [selectedFile, setSelectedFile] = useState(null);
 
     useEffect(() => {
         if (user?.username) {
@@ -337,7 +341,21 @@ export default function Dashboard() {
 
     const handleCreateSecret = async (e) => {
         e.preventDefault();
-        if (!newSecretName || !newSecretContent) return;
+
+
+        // Validation
+        if (!newSecretName) {
+            alert("Please enter a name for the secret.");
+            return;
+        }
+        if (contentType === 'text' && !newSecretContent) {
+            alert("Please enter secret text or switch to File upload.");
+            return;
+        }
+        if (contentType === 'file' && !selectedFile) {
+            alert("Please select a file to upload.");
+            return;
+        }
 
         try {
             if (!encryptionPublicKey) {
@@ -345,14 +363,31 @@ export default function Dashboard() {
                 return;
             }
 
+
+
+
+            let dataToEncrypt;
+            if (contentType === 'file') {
+                // Convert file to Base64
+                const base64 = await readFileAsBase64(selectedFile);
+                dataToEncrypt = JSON.stringify({
+                    type: 'file',
+                    name: selectedFile.name,
+                    mime: selectedFile.type,
+                    content: base64
+                });
+            } else {
+                dataToEncrypt = newSecretContent;
+            }
+
             let encrypted;
             if (authType === 'trustkeys') {
                 // PQC Encryption
-                const res = await encryptPQC(newSecretContent, encryptionPublicKey);
+                const res = await encryptPQC(dataToEncrypt, encryptionPublicKey);
                 encrypted = JSON.stringify(res);
             } else {
                 // Standard Encryption
-                encrypted = encryptData(newSecretContent, encryptionPublicKey);
+                encrypted = encryptData(dataToEncrypt, encryptionPublicKey);
             }
 
             const createRes = await fetch(`${API_ENDPOINTS.SECRETS.CREATE}?owner_address=${user.address}`, {
@@ -367,6 +402,8 @@ export default function Dashboard() {
             if (createRes.ok) {
                 setNewSecretName('');
                 setNewSecretContent('');
+                setSelectedFile(null);
+                setContentType('text');
                 setIsCreating(false);
                 fetchSecrets();
             }
@@ -374,6 +411,60 @@ export default function Dashboard() {
             console.error("Failed to create secret", error);
             alert("Failed to create secret");
         }
+    };
+
+    const readFileAsBase64 = (file) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result); // Returns data:mime;base64,...
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const handleDownload = (jsonContent) => {
+        try {
+            const fileData = JSON.parse(jsonContent);
+            if (fileData.type !== 'file') return;
+
+            // Create Blob from Base64
+            // Data URL format: "data:image/png;base64,....."
+            const link = document.createElement('a');
+            link.href = fileData.content;
+            link.download = fileData.name;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (e) {
+            console.error("Download failed", e);
+        }
+    };
+
+    const renderDecryptedContent = (content) => {
+        try {
+            // Check if it's a file payload
+            const parsed = JSON.parse(content);
+            if (parsed && parsed.type === 'file' && parsed.content) {
+                return (
+                    <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2 text-indigo-300">
+                            <FileText className="w-4 h-4" />
+                            <span className="font-medium">{parsed.name}</span>
+                            <span className="text-xs text-slate-500">({parsed.mime})</span>
+                        </div>
+                        <button
+                            onClick={() => handleDownload(content)}
+                            className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm w-fit transition-colors"
+                        >
+                            <Download className="w-4 h-4" /> Download File
+                        </button>
+                    </div>
+                );
+            }
+        } catch (e) {
+            // Not JSON or Not File -> Text
+        }
+        return content;
     };
 
     const handleDecrypt = async (item, isShared = false) => {
@@ -688,14 +779,54 @@ export default function Dashboard() {
                                     placeholder="e.g. WiFi Password"
                                 />
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Content</label>
-                                <textarea
-                                    value={newSecretContent}
-                                    onChange={(e) => setNewSecretContent(e.target.value)}
-                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none h-24"
-                                    placeholder="Secret content..."
-                                />
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-slate-400 mb-1">Content Type</label>
+                                <div className="flex gap-4 mb-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setContentType('text')}
+                                        className={`flex-1 py-2 rounded-lg text-sm border ${contentType === 'text' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-indigo-500'}`}
+                                    >
+                                        <div className="flex items-center justify-center gap-2">
+                                            <FileText className="w-4 h-4" /> Text
+                                        </div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setContentType('file')}
+                                        className={`flex-1 py-2 rounded-lg text-sm border ${contentType === 'file' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-indigo-500'}`}
+                                    >
+                                        <div className="flex items-center justify-center gap-2">
+                                            <Upload className="w-4 h-4" /> File
+                                        </div>
+                                    </button>
+                                </div>
+
+                                {contentType === 'text' ? (
+                                    <>
+                                        <label className="block text-sm font-medium text-slate-400 mb-1">Secret Content</label>
+                                        <textarea
+                                            value={newSecretContent}
+                                            onChange={(e) => setNewSecretContent(e.target.value)}
+                                            className="w-full h-32 bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none font-mono text-sm"
+                                            placeholder="Enter sensitive data..."
+                                        />
+                                    </>
+                                ) : (
+                                    <div className="border border-dashed border-slate-700 rounded-lg p-6 flex flex-col items-center justify-center bg-slate-950/50">
+                                        <input
+                                            type="file"
+                                            id="file-upload"
+                                            className="hidden"
+                                            onChange={(e) => setSelectedFile(e.target.files[0])}
+                                        />
+                                        <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
+                                            <Upload className="w-8 h-8 text-indigo-400 mb-2" />
+                                            <span className="text-sm text-slate-300 font-medium">Click to upload file</span>
+                                            <span className="text-xs text-slate-500 mt-1">{selectedFile ? selectedFile.name : "Any file type allowed"}</span>
+                                        </label>
+                                    </div>
+                                )}
                             </div>
                             <div className="flex justify-end gap-3">
                                 <button
@@ -743,7 +874,7 @@ export default function Dashboard() {
 
                                         {decryptedSecrets[secret.id] ? (
                                             <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-200 font-mono text-sm break-all">
-                                                {decryptedSecrets[secret.id]}
+                                                {renderDecryptedContent(decryptedSecrets[secret.id])}
                                             </div>
                                         ) : (
                                             <div className="mt-3 text-sm text-slate-500 italic flex items-center gap-2">
@@ -823,7 +954,7 @@ export default function Dashboard() {
 
                                     {decryptedSecrets[`shared_${grant.id}`] ? (
                                         <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-200 font-mono text-sm break-all">
-                                            {decryptedSecrets[`shared_${grant.id}`]}
+                                            {renderDecryptedContent(decryptedSecrets[`shared_${grant.id}`])}
                                         </div>
                                     ) : (
                                         <div className="mt-3 text-sm text-slate-500 italic flex items-center gap-2">
