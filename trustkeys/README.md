@@ -1,6 +1,6 @@
 # TrustKeys - Post-Quantum Cryptography (PQC) Extension
 
-TrustKeys is a quantum-resistant browser extension designed to secure Web3 interactions against future quantum computing threats. It implements the **Module-Lattice-based Key Encapsulation Mechanism (ML-KEM)** and **Digital Signature Algorithm (ML-DSA)** standards.
+TrustKeys is a quantum-resistant browser extension designed to secure interactions against future quantum computing threats. It implements the **Module-Lattice-based Key Encapsulation Mechanism (ML-KEM)** and **Digital Signature Algorithm (ML-DSA)** standards.
 
 > **Status**: Beta (Production Functional)
 > **Algorithms**: Crystals-Kyber-768 (ML-KEM) & Crystals-Dilithium-2 (ML-DSA)
@@ -24,7 +24,7 @@ TrustKeys utilizes the NIST multi-round selected algorithms for post-quantum sec
 - **Key Derivation**: Your password derives the encryption key using **PBKDF2** (SHA-256, 100,000 iterations).
 - **Memory-Only Decryption**: Private keys are decrypted into memory *only* when the vault is unlocked and are cleared immediately upon locking.
 
-### 3. MPC Recovery (Google Backup)
+### 3. MPC Recovery (Google Backup) -- WIP -- Not fully usable for now
 TrustKeys supports **Multi-Party Computation (MPC)** based recovery.
 - **How it works**: Your Vault Key is split into shares.
 - **Google Share**: One share is encrypted and stored associated with your Google ID.
