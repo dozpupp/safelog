@@ -11,7 +11,7 @@ export default defineConfig({
     react(),
     crx({ manifest }),
     nodePolyfills({
-      include: ['buffer', 'util', 'stream', 'fs'],
+      include: ['buffer', 'util', 'stream', 'fs', 'crypto'],
       globals: {
         Buffer: true,
         process: true,
