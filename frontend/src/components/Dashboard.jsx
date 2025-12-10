@@ -80,6 +80,10 @@ export default function Dashboard() {
     // File Upload State
     const [contentType, setContentType] = useState('text'); // 'text' | 'file'
     const [selectedFile, setSelectedFile] = useState(null);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [statusMessage, setStatusMessage] = useState('');
+
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
     useEffect(() => {
         if (user?.username) {
@@ -362,7 +366,6 @@ export default function Dashboard() {
     const handleCreateSecret = async (e) => {
         e.preventDefault();
 
-
         // Validation
         if (!newSecretName) {
             alert("Please enter a name for the secret.");
@@ -372,9 +375,15 @@ export default function Dashboard() {
             alert("Please enter secret text or switch to File upload.");
             return;
         }
-        if (contentType === 'file' && !selectedFile) {
-            alert("Please select a file to upload.");
-            return;
+        if (contentType === 'file') {
+            if (!selectedFile) {
+                alert("Please select a file to upload.");
+                return;
+            }
+            if (selectedFile.size > MAX_FILE_SIZE) {
+                alert(`File content is too large. Limit is 5MB.`);
+                return;
+            }
         }
 
         try {
@@ -383,8 +392,8 @@ export default function Dashboard() {
                 return;
             }
 
-
-
+            setUploadProgress(10);
+            setStatusMessage("Reading...");
 
             let dataToEncrypt;
             if (contentType === 'file') {
@@ -400,6 +409,13 @@ export default function Dashboard() {
                 dataToEncrypt = newSecretContent;
             }
 
+            setUploadProgress(40);
+            setStatusMessage("Encrypting...");
+
+            // Artificial delay for small files so user sees the UI? 
+            // optional, but helpful for UX feel. Let's not force it too much.
+            await new Promise(r => setTimeout(r, 200));
+
             let encrypted;
             if (authType === 'trustkeys') {
                 // PQC Encryption
@@ -409,6 +425,9 @@ export default function Dashboard() {
                 // Standard Encryption
                 encrypted = encryptData(dataToEncrypt, encryptionPublicKey);
             }
+
+            setUploadProgress(70);
+            setStatusMessage("Saving...");
 
             const createRes = await fetch(API_ENDPOINTS.SECRETS.CREATE, {
                 method: 'POST',
@@ -423,16 +442,29 @@ export default function Dashboard() {
             });
 
             if (createRes.ok) {
+                setUploadProgress(100);
+                setStatusMessage("Done!");
+                await new Promise(r => setTimeout(r, 500)); // Show 100% briefly
+
                 setNewSecretName('');
                 setNewSecretContent('');
                 setSelectedFile(null);
                 setContentType('text');
                 setIsCreating(false);
+                setUploadProgress(0);
+                setStatusMessage('');
                 fetchSecrets();
+            } else {
+                setUploadProgress(0);
+                setStatusMessage('');
+                const err = await createRes.text();
+                alert("Failed to save: " + err);
             }
         } catch (error) {
             console.error("Failed to create secret", error);
             alert("Failed to create secret");
+            setUploadProgress(0);
+            setStatusMessage('');
         }
     };
 
@@ -870,9 +902,23 @@ export default function Dashboard() {
                                 </button>
                                 <button
                                     type="submit"
-                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                                    disabled={uploadProgress > 0}
+                                    className="relative bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-all overflow-hidden disabled:cursor-not-allowed min-w-[140px]"
                                 >
-                                    Encrypt & Save
+                                    {uploadProgress > 0 ? (
+                                        <>
+                                            <div
+                                                className="absolute left-0 top-0 bottom-0 bg-emerald-500 transition-all duration-300"
+                                                style={{ width: `${uploadProgress}%` }}
+                                            />
+                                            <span className="relative z-10 flex items-center justify-center gap-2">
+                                                {uploadProgress < 100 && <RefreshCw className="w-4 h-4 animate-spin" />}
+                                                {statusMessage}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        "Encrypt & Save"
+                                    )}
                                 </button>
                             </div>
                         </form>
