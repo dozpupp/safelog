@@ -2,13 +2,16 @@
 
 const callBackground = (type, payload) => {
     return new Promise((resolve, reject) => {
+        if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
+            console.error("TrustKeys Content Script: chrome.runtime is invalid", typeof chrome);
+            reject(new Error("Extension context invalid (reload page?)"));
+            return;
+        }
         chrome.runtime.sendMessage({ type, ...payload }, (response) => {
             if (chrome.runtime.lastError) {
                 reject(chrome.runtime.lastError);
             } else if (response && response.success) {
-                resolve(response); // Return full response or specific field? 
-                // Better to standardize. Let's return the relevant data field if possible or the whole thing.
-                // For simplicity, let's return the whole object minus success for now, or just handle it per method.
+                resolve(response);
             } else {
                 reject(new Error(response?.error || "Unknown error"));
             }

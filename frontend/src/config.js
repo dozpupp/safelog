@@ -11,10 +11,10 @@ export const API_ENDPOINTS = {
         UPDATE: (address) => `${API_BASE_URL}/users/${address}`,
     },
     SECRETS: {
-        LIST: (address) => `${API_BASE_URL}/secrets/${address}`,
+        LIST: `${API_BASE_URL}/secrets`,
         CREATE: `${API_BASE_URL}/secrets`,
         SHARE: `${API_BASE_URL}/secrets/share`,
-        SHARED_WITH: (address) => `${API_BASE_URL}/secrets/shared-with/${address}`,
+        SHARED_WITH: `${API_BASE_URL}/secrets/shared-with-me`,
         ACCESS: (secretId) => `${API_BASE_URL}/secrets/${secretId}/access`,
         UPDATE: (secretId) => `${API_BASE_URL}/secrets/${secretId}`,
         DELETE: (secretId) => `${API_BASE_URL}/secrets/${secretId}`,

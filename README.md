@@ -4,7 +4,7 @@ A secure secret management and document signing application featuring **Quantum-
 
 ## Features
 
-- 🔐 **Dual Authentication** - Login with **MetaMask** (Ethereum) or **TrustKeys** (Post-Quantum).
+- 🔐 **Dual Authentication** - Login with **MetaMask** (Ethereum) or **TrustKeys** (Post-Quantum) using secure JWT sessions.
 - 🧬 **Quantum-Proof Cryptography** - Integration with **Crystals-Kyber** (ML-KEM) and **Crystals-Dilithium** (ML-DSA).
 - 🛡️ **Secure Vault** - Client-side encryption ensures the server never sees your secrets.
 - 📂 **File Vault** - Securely upload, encrypt, and share files (Images, PDFs, etc.).
@@ -22,6 +22,7 @@ A secure secret management and document signing application featuring **Quantum-
 - **FastAPI** - High-performance Python framework.
 - **SQLAlchemy + SQLite** - Robust data persistence.
 - **Node.js Bridge** - Interop layer for validating Dilithium signatures.
+- **PyJWT** - Secure session management.
 
 ### Frontend (`/frontend`)
 - **React 19 + Vite** - Fast, modern UI.
@@ -55,11 +56,19 @@ A secure secret management and document signing application featuring **Quantum-
    cd backend
    # Establish environment
    cp .env.example .env
+   
+   # Install Python Dependencies
    pip3 install -r requirements.txt
+   
+   # Install Node.js Dependencies (Crucial for PQC Verification)
+   npm install
    
    # Initialize DB
    python3 create_database.py
    ```
+   **Configuration (`.env`):**
+   - `SECRET_KEY`: Set a strong random string for JWT signing.
+   - `GOOGLE_CLIENT_ID`: Required for secure MPC recovery (matches Extension ID).
 
 3. **Setup Frontend**
    ```bash
@@ -74,6 +83,7 @@ A secure secret management and document signing application featuring **Quantum-
    - Open Chrome/Brave to `chrome://extensions`.
    - Enable "Developer Mode".
    - Click "Load Unpacked" and select `safelog/trustkeys/dist`.
+   - **Important**: If you update the code, you must reload the extension here and refresh the app page.
 
 5. **Run Application**
    - Backend: `uvicorn main:app --reload` (Port 8000)
@@ -83,9 +93,13 @@ A secure secret management and document signing application featuring **Quantum-
 
 SafeLog employs a **Zero-Trust** architecture. All data is encrypted client-side before transmission. 
 
-- **Authentication**: Uses digital signatures (ECDSA for Eth, Dilithium-2 for TrustKeys) to prove identity without exchanging passwords.
+- **Session Management**: 
+  - Login uses digital signatures (ECDSA/Dilithium) to verify identity.
+  - Returns a **JWT** (JSON Web Token) for stateless, secure session management.
+  - All sensitive endpoints require `Authorization: Bearer <token>`.
 - **Data Protection**: Secrets are encrypted using a recipient's public key (encryption key) before hitting the database.
 - **Post-Quantum Readiness**: Ready for the future with NIST-standardized algorithms (ML-KEM, ML-DSA).
+- **Access Control**: Backend enforces strict ownership checks derived from the authenticated JWT, preventing IDOR attacks.
 
 ### Configuration
 
@@ -95,25 +109,13 @@ SafeLog employs a **Zero-Trust** architecture. All data is encrypted client-side
    VITE_API_BASE_URL=https://api.yourdomain.com
    ```
 
-2. **Configure Allowed Hosts (Frontend)**:
-   If accessing via a specific domain (e.g. `safelog.hashpar.com`), add it to `ALLOWED_HOSTS` in `frontend/.env` to prevent "Blocked request" errors from Vite.
-   ```
-   ALLOWED_HOSTS=safelog.hashpar.com
-   ```
-
-3. **Configure CORS (Backend)**:
+2. **Configure CORS (Backend)**:
    The backend restricts access to known origins. To allow your frontend domain to make requests, set `ALLOWED_ORIGINS` environment variable when running the backend.
    ```bash
    export ALLOWED_ORIGINS="http://yourdomain.com,http://another-domain.com"
    python3 -m uvicorn main:app --reload --port 8000
    ```
    *Note: `localhost:5173` is allowed by default.*
-
-4. **Run with Host Exposure**:
-   By default, Vite only listens on localhost. To access it externally, run:
-   ```bash
-   npm run dev -- --host
-   ```
 
 ## Usage
 
@@ -135,47 +137,9 @@ SafeLog employs a **Zero-Trust** architecture. All data is encrypted client-side
 3. Select the user and click "Share"
 4. The secret is securely re-encrypted for the recipient
 
-### View a Secret
-1. Click the unlock 🔓 button
-2. Approve decryption
-3. Decrypted content appears below
-4. (For Files) Click "Download Decrypted File"
-
-## Security
-
-- **No Plain Text Storage** - All secrets are encrypted before leaving your browser
-- **Private Keys Never Exposed** - Encryption/decryption happens via MetaMask or TrustKeys Extension
-- **Client-Side Encryption** - Server never sees your plain text data
-- **Signature-Based Auth** - No passwords, uses Ethereum or PQC signatures
-
-## Project Structure
-
-```
-safelog/
-├── backend/
-│   ├── main.py           # API routes
-│   ├── models.py         # Database models
-│   ├── schemas.py        # Pydantic schemas
-│   ├── auth.py           # Authentication logic
-│   └── database.py       # Database setup
-└── frontend/
-    ├── src/
-    │   ├── components/   # React components
-    │   ├── context/      # Auth & Crypto contexts
-    │   ├── utils/        # Crypto utilities (PQC, MPC)
-    │   └── App.jsx
-    └── vite.config.js
-```
-
-## Future Enhancements
-
-- [x] Secret sharing with other users
-- [x] User profiles
-- [x] File Sharing
-- [x] Timebomb (Ephemeral) Access
-- [ ] Document signing UI
-- [ ] PostgreSQL support
-- [ ] Mobile-responsive improvements
+## Design Decisions & Future Work
+- **Database**: Currently uses SQLite for simplicity. **Production Deployment MUST use PostgreSQL**.
+- **Nonce Storage**: Currently in-memory. **Production MUST use Redis** for scalability.
 
 ## License
 

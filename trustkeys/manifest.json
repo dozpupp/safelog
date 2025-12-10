@@ -31,7 +31,8 @@
             ],
             "js": [
                 "src/content/index.js"
-            ]
+            ],
+            "world": "ISOLATED"
         },
         {
             "matches": [

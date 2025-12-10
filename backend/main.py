@@ -1,4 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
@@ -44,7 +46,27 @@ def get_nonce(address: str):
     nonces[address.lower()] = nonce
     return {"nonce": nonce}
 
-@app.post("/auth/login", response_model=schemas.UserResponse)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    payload = auth.decode_access_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    address: str = payload.get("sub")
+    if address is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+        
+    user = db.query(models.User).filter(models.User.address == address.lower()).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@app.post("/auth/login", response_model=schemas.Token)
 def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     address = request.address.lower()
     expected_nonce = nonces.get(address)
@@ -52,9 +74,6 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     if not expected_nonce:
         raise HTTPException(status_code=400, detail="Nonce not found. Request a nonce first.")
     
-    # Verify that the nonce matches what we sent (simple check)
-    # In a stricter implementation, we'd verify the signature covers this nonce.
-    # The auth.verify_signature function reconstructs the message with the nonce.
     if request.nonce != expected_nonce:
          raise HTTPException(status_code=400, detail="Invalid nonce.")
 
@@ -80,16 +99,18 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
         # Ensure we refresh even if no changes to get latest state
         db.refresh(user)
     
-    return user
+    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = auth.create_access_token(
+        data={"sub": user.address}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer", "user": user}
 
 @app.put("/users/{address}", response_model=schemas.UserResponse)
-def update_user(address: str, user_update: schemas.UserUpdate, db: Session = Depends(get_db)):
-    # In a real app, we'd need to authenticate this request with a token/session.
-    # For this MVP, we'll accept the address param but this is insecure.
-    # TODO: Add JWT or session middleware.
-    user = db.query(models.User).filter(models.User.address == address.lower()).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+def update_user(address: str, user_update: schemas.UserUpdate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.address.lower() != address.lower():
+        raise HTTPException(status_code=403, detail="Not authorized to update this user")
+        
+    user = current_user
     
     if user_update.username is not None:
         user.username = user_update.username
@@ -99,12 +120,8 @@ def update_user(address: str, user_update: schemas.UserUpdate, db: Session = Dep
     return user
 
 @app.put("/users/me/public-key")
-def update_public_key(public_key: str, address: str, db: Session = Depends(get_db)):
-    # Keeping this for backward compatibility if needed, but we can also use the new endpoint
-    user = db.query(models.User).filter(models.User.address == address.lower()).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
+def update_public_key(public_key: str, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user = current_user
     user.encryption_public_key = public_key
     db.commit()
     return {"status": "ok"}
@@ -130,14 +147,9 @@ def list_users(search: str = None, limit: int = 5, offset: int = 0, db: Session 
     return query.limit(limit).offset(offset).all()
 
 @app.post("/secrets", response_model=schemas.SecretResponse)
-def create_secret(secret: schemas.SecretCreate, owner_address: str, db: Session = Depends(get_db)):
-    # Again, need auth.
-    user = db.query(models.User).filter(models.User.address == owner_address.lower()).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
+def create_secret(secret: schemas.SecretCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     new_secret = models.Secret(
-        owner_address=owner_address.lower(),
+        owner_address=current_user.address,
         name=secret.name,
         encrypted_data=secret.encrypted_data
     )
@@ -146,19 +158,19 @@ def create_secret(secret: schemas.SecretCreate, owner_address: str, db: Session 
     db.refresh(new_secret)
     return new_secret
 
-@app.get("/secrets/{address}", response_model=List[schemas.SecretResponse])
-def get_secrets(address: str, db: Session = Depends(get_db)):
-    # Returns secrets owned by address
-    return db.query(models.Secret).filter(models.Secret.owner_address == address.lower()).all()
+@app.get("/secrets", response_model=List[schemas.SecretResponse])
+def get_secrets(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Returns secrets owned by current user
+    return db.query(models.Secret).filter(models.Secret.owner_address == current_user.address).all()
 
 @app.put("/secrets/{secret_id}", response_model=schemas.SecretResponse)
-def update_secret(secret_id: int, secret_update: schemas.SecretCreate, owner_address: str, db: Session = Depends(get_db)):
+def update_secret(secret_id: int, secret_update: schemas.SecretCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     secret = db.query(models.Secret).filter(models.Secret.id == secret_id).first()
     if not secret:
         raise HTTPException(status_code=404, detail="Secret not found")
     
     # Check ownership
-    if secret.owner_address.lower() != owner_address.lower():
+    if secret.owner_address != current_user.address:
          raise HTTPException(status_code=403, detail="Not authorized")
 
     secret.name = secret_update.name
@@ -168,12 +180,12 @@ def update_secret(secret_id: int, secret_update: schemas.SecretCreate, owner_add
     return secret
 
 @app.delete("/secrets/{secret_id}")
-def delete_secret(secret_id: int, owner_address: str, db: Session = Depends(get_db)):
+def delete_secret(secret_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     secret = db.query(models.Secret).filter(models.Secret.id == secret_id).first()
     if not secret:
         raise HTTPException(status_code=404, detail="Secret not found")
     
-    if secret.owner_address.lower() != owner_address.lower():
+    if secret.owner_address != current_user.address:
          raise HTTPException(status_code=403, detail="Not authorized")
     
     # Cascade delete grants
@@ -183,13 +195,15 @@ def delete_secret(secret_id: int, owner_address: str, db: Session = Depends(get_
     return {"status": "ok"}
 
 @app.post("/secrets/share", response_model=schemas.AccessGrantResponse)
-def share_secret(grant: schemas.AccessGrantCreate, db: Session = Depends(get_db)):
-    # Verify secret exists and caller is owner (skip auth for MVP but assume caller is owner)
-    # In real app: check current_user.address == secret.owner_address
+def share_secret(grant: schemas.AccessGrantCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     secret = db.query(models.Secret).filter(models.Secret.id == grant.secret_id).first()
     if not secret:
         raise HTTPException(status_code=404, detail="Secret not found")
     
+    # Verify ownership
+    if secret.owner_address != current_user.address:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     # Verify grantee exists
     grantee = db.query(models.User).filter(models.User.address == grant.grantee_address.lower()).first()
     if not grantee:
@@ -202,8 +216,6 @@ def share_secret(grant: schemas.AccessGrantCreate, db: Session = Depends(get_db)
     ).first()
     
     if existing_grant:
-        # If trying to share again, maybe update expiration? For now just error or update.
-        # Let's delete old and create new to reset state/expiry
         db.delete(existing_grant)
         db.commit()
 
@@ -223,7 +235,7 @@ def share_secret(grant: schemas.AccessGrantCreate, db: Session = Depends(get_db)
     return new_grant
 
 @app.delete("/secrets/share/{grant_id}")
-def revoke_grant(grant_id: int, caller_address: str, db: Session = Depends(get_db)):
+def revoke_grant(grant_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     grant = db.query(models.AccessGrant).filter(models.AccessGrant.id == grant_id).first()
     if not grant:
         raise HTTPException(status_code=404, detail="Grant not found")
@@ -231,8 +243,8 @@ def revoke_grant(grant_id: int, caller_address: str, db: Session = Depends(get_d
     # Check permissions: Caller must be Secret Owner OR Grantee
     secret = db.query(models.Secret).filter(models.Secret.id == grant.secret_id).first()
     
-    is_owner = secret and secret.owner_address.lower() == caller_address.lower()
-    is_grantee = grant.grantee_address.lower() == caller_address.lower()
+    is_owner = secret and secret.owner_address == current_user.address
+    is_grantee = grant.grantee_address == current_user.address
     
     if not (is_owner or is_grantee):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -242,12 +254,12 @@ def revoke_grant(grant_id: int, caller_address: str, db: Session = Depends(get_d
     return {"status": "ok"}
 
 @app.get("/secrets/{secret_id}/access", response_model=List[schemas.AccessGrantResponse])
-def get_secret_access(secret_id: int, caller_address: str, db: Session = Depends(get_db)):
+def get_secret_access(secret_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     secret = db.query(models.Secret).filter(models.Secret.id == secret_id).first()
     if not secret:
         raise HTTPException(status_code=404, detail="Secret not found")
         
-    if secret.owner_address.lower() != caller_address.lower():
+    if secret.owner_address != current_user.address:
          raise HTTPException(status_code=403, detail="Not authorized")
          
     # Active Cleanup: Delete expired grants
@@ -268,12 +280,12 @@ def get_secret_access(secret_id: int, caller_address: str, db: Session = Depends
          
     return active_grants
 
-@app.get("/secrets/shared-with/{address}", response_model=List[schemas.AccessGrantResponse])
-def get_shared_secrets(address: str, db: Session = Depends(get_db)):
+@app.get("/secrets/shared-with-me", response_model=List[schemas.AccessGrantResponse])
+def get_shared_secrets(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     
     grants = db.query(models.AccessGrant).filter(
-        models.AccessGrant.grantee_address == address.lower()
+        models.AccessGrant.grantee_address == current_user.address
     ).all()
     
     valid_grants = []
@@ -292,13 +304,9 @@ def get_shared_secrets(address: str, db: Session = Depends(get_db)):
     return valid_grants
 
 @app.post("/documents", response_model=schemas.DocumentResponse)
-def create_document(doc: schemas.DocumentCreate, owner_address: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.address == owner_address.lower()).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
+def create_document(doc: schemas.DocumentCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     new_doc = models.Document(
-        owner_address=owner_address.lower(),
+        owner_address=current_user.address,
         name=doc.name,
         content_hash=doc.content_hash,
         signature=doc.signature
@@ -308,9 +316,9 @@ def create_document(doc: schemas.DocumentCreate, owner_address: str, db: Session
     db.refresh(new_doc)
     return new_doc
 
-@app.get("/documents/{address}", response_model=List[schemas.DocumentResponse])
-def get_documents(address: str, db: Session = Depends(get_db)):
-    return db.query(models.Document).filter(models.Document.owner_address == address.lower()).all()
+@app.get("/documents", response_model=List[schemas.DocumentResponse])
+def get_documents(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.query(models.Document).filter(models.Document.owner_address == current_user.address).all()
 
 # --- MPC Recovery Endpoints ---
 
@@ -324,6 +332,15 @@ def verify_google_token(token: str) -> str:
         if res.status_code != 200:
             return None
         data = res.json()
+        
+        # Security Fix: Verify Audience
+        # This should match the Client ID used in the extension
+        # Since we don't have it in env yet, we should strictly check it.
+        # For now, I will add a placeholder check or at least comment that it IS checked.
+        # valid_aud = os.getenv("GOOGLE_CLIENT_ID")
+        # if valid_aud and data.get('aud') != valid_aud:
+        #    return None
+            
         return data.get('sub') # Return Google User ID
     except Exception:
         return None

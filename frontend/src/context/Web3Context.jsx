@@ -78,9 +78,9 @@ export const Web3Provider = ({ children }) => {
         });
 
         if (loginRes.ok) {
-            const userData = await loginRes.json();
-            authLogin(userData, 'metamask'); // Update Global Auth State
-            return userData;
+            const data = await loginRes.json();
+            authLogin(data.user, 'metamask', data.access_token); // Update Global Auth State
+            return data.user;
         } else {
             throw new Error("Login failed");
         }

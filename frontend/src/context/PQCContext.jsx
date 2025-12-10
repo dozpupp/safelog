@@ -60,9 +60,9 @@ export const PQCProvider = ({ children }) => {
         });
 
         if (loginRes.ok) {
-            const userData = await loginRes.json();
-            authLogin(userData, 'trustkeys'); // Update Global Auth State
-            return userData;
+            const data = await loginRes.json();
+            authLogin(data.user, 'trustkeys', data.access_token); // Update Global Auth State
+            return data.user;
         } else {
             const errText = await loginRes.text();
             throw new Error(`Login failed: ${errText}`);

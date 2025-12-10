@@ -43,7 +43,7 @@ const DisplayField = ({ label, value }) => {
 };
 
 export default function Dashboard() {
-    const { user, setUser, authType } = useAuth();
+    const { user, setUser, authType, token, logout } = useAuth();
     const { currentAccount, encryptionPublicKey: ethKey } = useWeb3();
     const { kyberKey, encrypt: encryptPQC, decrypt: decryptPQC } = usePQC();
 
@@ -91,11 +91,15 @@ export default function Dashboard() {
     }, [user]);
 
     const fetchSecrets = async () => {
-        if (!user) return;
+        if (!user || !token) return;
         try {
-            const res = await fetch(API_ENDPOINTS.SECRETS.LIST(user.address));
-            const data = await res.json();
-            setSecrets(data);
+            const res = await fetch(API_ENDPOINTS.SECRETS.LIST, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSecrets(data);
+            }
         } catch (error) {
             console.error("Failed to fetch secrets", error);
         } finally {
@@ -104,11 +108,15 @@ export default function Dashboard() {
     };
 
     const fetchSharedSecrets = async () => {
-        if (!user) return;
+        if (!user || !token) return;
         try {
-            const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH(user.address));
-            const data = await res.json();
-            setSharedSecrets(data);
+            const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSharedSecrets(data);
+            }
         } catch (error) {
             console.error("Failed to fetch shared secrets", error);
         }
@@ -185,9 +193,11 @@ export default function Dashboard() {
     };
 
     const fetchAccessList = async (secretId) => {
-        if (!user || !secretId) return;
+        if (!user || !secretId || !token) return;
         try {
-            const res = await fetch(`${API_ENDPOINTS.SECRETS.ACCESS(secretId)}?caller_address=${user.address}`);
+            const res = await fetch(API_ENDPOINTS.SECRETS.ACCESS(secretId), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setAccessList(data);
@@ -219,8 +229,9 @@ export default function Dashboard() {
     const handleDeleteSecret = async (id) => {
         if (!confirm("Are you sure? This will delete the secret for everyone.")) return;
         try {
-            const res = await fetch(`${API_ENDPOINTS.SECRETS.DELETE(id)}?owner_address=${user.address}`, {
-                method: 'DELETE'
+            const res = await fetch(API_ENDPOINTS.SECRETS.DELETE(id), {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 // Instant UI Update
@@ -234,8 +245,9 @@ export default function Dashboard() {
     const handleRevokeGrant = async (grantId) => {
         if (!confirm("Are you sure you want to revoke access?")) return;
         try {
-            const res = await fetch(`${API_ENDPOINTS.SECRETS.REVOKE(grantId)}?caller_address=${user.address}`, {
-                method: 'DELETE'
+            const res = await fetch(API_ENDPOINTS.SECRETS.REVOKE(grantId), {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 // Instant UI Update
@@ -256,9 +268,12 @@ export default function Dashboard() {
             // Re-encrypt
             const encrypted = await secureEncrypt(editContent, encryptionPublicKey);
 
-            const res = await fetch(`${API_ENDPOINTS.SECRETS.UPDATE(secretToEdit.id)}?owner_address=${user.address}`, {
+            const res = await fetch(API_ENDPOINTS.SECRETS.UPDATE(secretToEdit.id), {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     name: editName,
                     encrypted_data: encrypted
@@ -315,7 +330,10 @@ export default function Dashboard() {
             // 3. Share via API
             const res = await fetch(API_ENDPOINTS.SECRETS.SHARE, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     secret_id: secretToShare.id,
                     grantee_address: selectedUser.address,
@@ -390,9 +408,12 @@ export default function Dashboard() {
                 encrypted = encryptData(dataToEncrypt, encryptionPublicKey);
             }
 
-            const createRes = await fetch(`${API_ENDPOINTS.SECRETS.CREATE}?owner_address=${user.address}`, {
+            const createRes = await fetch(API_ENDPOINTS.SECRETS.CREATE, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     name: newSecretName,
                     encrypted_data: encrypted
@@ -485,7 +506,10 @@ export default function Dashboard() {
         try {
             const res = await fetch(API_ENDPOINTS.USERS.UPDATE(user.address), {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     username: usernameInput
                 })
@@ -517,10 +541,10 @@ export default function Dashboard() {
                         className="px-4 py-2 bg-slate-900 rounded-lg border border-slate-800 text-sm font-mono text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer transition-colors flex items-center gap-2"
                     >
                         <User className="w-4 h-4" />
-                        {user?.username || `${user?.address.slice(0, 6)}...${user?.address.slice(-4)}`}
+                        {user?.username || `${user?.address?.slice(0, 6)}...${user?.address?.slice(-4)}`}
                     </div>
                     <button
-                        onClick={() => window.location.reload()}
+                        onClick={logout}
                         className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
                     >
                         <LogOut className="w-5 h-5 text-slate-400" />

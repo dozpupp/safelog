@@ -12,19 +12,33 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
+    const [token, setToken] = useState(localStorage.getItem('token'));
     const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [authType, setAuthType] = useState(null); // 'metamask' | 'trustkeys'
+    const [authType, setAuthType] = useState(localStorage.getItem('authType')); // 'metamask' | 'trustkeys'
 
-    const login = (userData, type) => {
+    // check if we have token on load
+    React.useEffect(() => {
+        if (token) {
+            setIsAuthenticated(true);
+            // Optionally fetch user profile here if not stored
+        }
+    }, [token]);
+
+    const login = (userData, type, accessToken) => {
         setUser(userData);
         setAuthType(type);
+        setToken(accessToken);
         setIsAuthenticated(true);
+        localStorage.setItem('token', accessToken);
+        localStorage.setItem('authType', type);
     };
 
     const logout = () => {
         setUser(null);
         setAuthType(null);
+        setToken(null);
         setIsAuthenticated(false);
+        localStorage.clear();
     };
 
     const updateUser = (userData) => {
@@ -34,12 +48,13 @@ export const AuthProvider = ({ children }) => {
     return (
         <AuthContext.Provider value={{
             user,
+            token,
             isAuthenticated,
             authType,
             login,
             logout,
             updateUser,
-            setUser // Exposing raw setter just in case, leveraging 'updateUser' is better usually
+            setUser
         }}>
             {children}
         </AuthContext.Provider>
