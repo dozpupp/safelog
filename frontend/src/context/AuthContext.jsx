@@ -12,25 +12,17 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(localStorage.getItem('token'));
+    const [token, setToken] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [authType, setAuthType] = useState(localStorage.getItem('authType')); // 'metamask' | 'trustkeys'
+    const [authType, setAuthType] = useState(null); // 'metamask' | 'trustkeys'
 
-    // check if we have token on load
-    React.useEffect(() => {
-        if (token) {
-            setIsAuthenticated(true);
-            // Optionally fetch user profile here if not stored
-        }
-    }, [token]);
+    // No useEffect to load from localStorage - Session is transient.
 
     const login = (userData, type, accessToken) => {
         setUser(userData);
         setAuthType(type);
         setToken(accessToken);
         setIsAuthenticated(true);
-        localStorage.setItem('token', accessToken);
-        localStorage.setItem('authType', type);
     };
 
     const logout = () => {
@@ -38,7 +30,6 @@ export const AuthProvider = ({ children }) => {
         setAuthType(null);
         setToken(null);
         setIsAuthenticated(false);
-        localStorage.clear();
     };
 
     const updateUser = (userData) => {

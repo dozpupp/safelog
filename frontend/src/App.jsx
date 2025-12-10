@@ -2,6 +2,7 @@ import React from 'react';
 import { Web3Provider } from './context/Web3Context';
 import { PQCProvider } from './context/PQCContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 
@@ -25,13 +26,15 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <Web3Provider>
-        <PQCProvider>
-          <AppContent />
-        </PQCProvider>
-      </Web3Provider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <Web3Provider>
+          <PQCProvider>
+            <AppContent />
+          </PQCProvider>
+        </Web3Provider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

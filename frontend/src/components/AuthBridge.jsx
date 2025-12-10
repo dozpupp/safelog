@@ -66,7 +66,6 @@ const AuthBridge = () => {
     }, []);
 
     const handleCredentialResponse = (response) => {
-        console.log("Encoded JWT ID token: " + response.credential);
 
         // Fix: Read ID directly from URL to avoid stale closure (useEffect captures initial null state)
         const params = new URLSearchParams(window.location.search);

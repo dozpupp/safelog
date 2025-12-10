@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useWeb3 } from '../context/Web3Context';
 import { usePQC } from '../context/PQCContext';
+import { useTheme } from '../context/ThemeContext';
 import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypto';
-import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download } from 'lucide-react';
+import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon } from 'lucide-react';
 import API_ENDPOINTS from '../config';
 
 const DisplayField = ({ label, value }) => {
@@ -24,9 +25,9 @@ const DisplayField = ({ label, value }) => {
 
     return (
         <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">{label}</label>
+            <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">{label}</label>
             <div className="flex gap-2">
-                <div className="flex-1 bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-2 text-slate-500 font-mono text-xs break-all flex items-center">
+                <div className="flex-1 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-600 dark:text-slate-500 font-mono text-xs break-all flex items-center">
                     {displayValue || "Not set"}
                 </div>
                 <button
@@ -44,6 +45,7 @@ const DisplayField = ({ label, value }) => {
 
 export default function Dashboard() {
     const { user, setUser, authType, token, logout } = useAuth();
+    const { theme, toggleTheme } = useTheme();
     const { currentAccount, encryptionPublicKey: ethKey } = useWeb3();
     const { kyberKey, encrypt: encryptPQC, decrypt: decryptPQC } = usePQC();
 
@@ -527,7 +529,7 @@ export default function Dashboard() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-200 p-6">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 p-6 transition-colors duration-200">
             <header className="max-w-5xl mx-auto flex justify-between items-center mb-10">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-indigo-500/20 rounded-lg flex items-center justify-center">
@@ -536,6 +538,12 @@ export default function Dashboard() {
                     <h1 className="text-2xl font-bold text-white">SecureVault</h1>
                 </div>
                 <div className="flex items-center gap-4">
+                    <button
+                        onClick={toggleTheme}
+                        className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-600 dark:text-slate-400"
+                    >
+                        {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                    </button>
                     <div
                         onClick={() => setIsProfileOpen(true)}
                         className="px-4 py-2 bg-slate-900 rounded-lg border border-slate-800 text-sm font-mono text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer transition-colors flex items-center gap-2"
@@ -554,7 +562,7 @@ export default function Dashboard() {
 
             <main className="max-w-5xl mx-auto">
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold text-white">Your Secrets</h2>
+                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Your Secrets</h2>
                     <button
                         onClick={() => setIsCreating(!isCreating)}
                         className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -567,9 +575,9 @@ export default function Dashboard() {
                 {
                     isProfileOpen && (
                         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
                                 <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-xl font-semibold text-white">Edit Profile</h3>
+                                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Edit Profile</h3>
                                     <button onClick={() => setIsProfileOpen(false)} className="text-slate-400 hover:text-white">
                                         <X className="w-5 h-5" />
                                     </button>
@@ -582,7 +590,7 @@ export default function Dashboard() {
                                             type="text"
                                             value={usernameInput}
                                             onChange={(e) => setUsernameInput(e.target.value)}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
                                             placeholder="Set a username"
                                         />
                                     </div>
@@ -601,7 +609,7 @@ export default function Dashboard() {
                                         <button
                                             type="button"
                                             onClick={() => setIsProfileOpen(false)}
-                                            className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+                                            className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                                         >
                                             Cancel
                                         </button>
@@ -620,9 +628,9 @@ export default function Dashboard() {
 
                 {isShareModalOpen && (
                     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95 max-h-[85vh] flex flex-col">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95 max-h-[85vh] flex flex-col">
                             <div className="flex justify-between items-center mb-6 shrink-0">
-                                <h3 className="text-xl font-semibold text-white">Manage Access</h3>
+                                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Manage Access</h3>
                                 <button onClick={() => setIsShareModalOpen(false)} className="text-slate-400 hover:text-white">
                                     <X className="w-5 h-5" />
                                 </button>
@@ -696,7 +704,7 @@ export default function Dashboard() {
                                                 setSearchQuery(e.target.value);
                                                 searchUsers(e.target.value);
                                             }}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg pl-10 pr-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
                                             placeholder="Username or address..."
                                         />
                                     </div>
@@ -733,7 +741,7 @@ export default function Dashboard() {
                                         <Clock className="w-3 h-3" /> Expiry (Timebomb)
                                     </label>
                                     <select
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white outline-none"
+                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none"
                                         value={expiry}
                                         onChange={(e) => setExpiry(Number(e.target.value))}
                                     >
@@ -760,7 +768,7 @@ export default function Dashboard() {
                 {/* Edit Modal */}
                 {isEditModalOpen && (
                     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
                             <h3 className="text-xl font-semibold text-white mb-4">Edit Secret</h3>
                             <form onSubmit={handleUpdateSecret} className="space-y-4">
                                 <div>
@@ -769,7 +777,7 @@ export default function Dashboard() {
                                         type="text"
                                         value={editName}
                                         onChange={(e) => setEditName(e.target.value)}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white outline-none"
+                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none"
                                     />
                                 </div>
                                 <div>
@@ -791,7 +799,7 @@ export default function Dashboard() {
 
                 {/* Create Form */}
                 {isCreating && (
-                    <div className="mb-8 bg-slate-900 border border-slate-800 rounded-xl p-6 animate-in fade-in slide-in-from-top-4">
+                    <div className="mb-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 animate-in fade-in slide-in-from-top-4">
                         <form onSubmit={handleCreateSecret} className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
@@ -799,7 +807,7 @@ export default function Dashboard() {
                                     type="text"
                                     value={newSecretName}
                                     onChange={(e) => setNewSecretName(e.target.value)}
-                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
                                     placeholder="e.g. WiFi Password"
                                 />
                             </div>
@@ -832,12 +840,12 @@ export default function Dashboard() {
                                         <textarea
                                             value={newSecretContent}
                                             onChange={(e) => setNewSecretContent(e.target.value)}
-                                            className="w-full h-32 bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none font-mono text-sm"
+                                            className="w-full h-32 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none font-mono text-sm"
                                             placeholder="Enter sensitive data..."
                                         />
                                     </>
                                 ) : (
-                                    <div className="border border-dashed border-slate-700 rounded-lg p-6 flex flex-col items-center justify-center bg-slate-950/50">
+                                    <div className="border border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-6 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950/50">
                                         <input
                                             type="file"
                                             id="file-upload"
@@ -856,7 +864,7 @@ export default function Dashboard() {
                                 <button
                                     type="button"
                                     onClick={() => setIsCreating(false)}
-                                    className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+                                    className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                                 >
                                     Cancel
                                 </button>
@@ -878,19 +886,19 @@ export default function Dashboard() {
                             <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
                         </div>
                     ) : secrets.length === 0 ? (
-                        <div className="text-center py-12 border border-dashed border-slate-800 rounded-xl">
+                        <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
                             <p className="text-slate-500">No secrets found. Create one to get started.</p>
                         </div>
                     ) : (
                         <div className="grid gap-4">
                             {secrets.map(secret => (
-                                <div key={secret.id} className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex items-start justify-between group hover:border-slate-700 transition-all">
+                                <div key={secret.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-3 mb-2">
                                             <div className="p-2 bg-slate-800 rounded-lg">
                                                 <FileText className="w-4 h-4 text-indigo-400" />
                                             </div>
-                                            <h3 className="font-medium text-white">{secret.name}</h3>
+                                            <h3 className="font-medium text-slate-900 dark:text-white">{secret.name}</h3>
                                             <span className="text-xs text-slate-500">
                                                 {new Date(secret.created_at).toLocaleDateString()}
                                             </span>
@@ -947,7 +955,7 @@ export default function Dashboard() {
                 }
 
                 <div className="mt-12 mb-6">
-                    <h2 className="text-xl font-semibold text-white">Shared with You</h2>
+                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Shared with You</h2>
                 </div>
 
                 {loading ? (
@@ -955,19 +963,19 @@ export default function Dashboard() {
                         <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
                     </div>
                 ) : sharedSecrets.length === 0 ? (
-                    <div className="text-center py-12 border border-dashed border-slate-800 rounded-xl">
+                    <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
                         <p className="text-slate-500">No secrets shared with you yet.</p>
                     </div>
                 ) : (
                     <div className="grid gap-4">
                         {sharedSecrets.map(grant => (
-                            <div key={`shared-${grant.id}`} className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex items-start justify-between group hover:border-slate-700 transition-all">
+                            <div key={`shared-${grant.id}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all">
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-2">
                                         <div className="p-2 bg-slate-800 rounded-lg">
                                             <FileText className="w-4 h-4 text-indigo-400" />
                                         </div>
-                                        <h3 className="font-medium text-white">{grant.secret?.name || 'Unknown Secret'}</h3>
+                                        <h3 className="font-medium text-slate-900 dark:text-white">{grant.secret?.name || 'Unknown Secret'}</h3>
                                         <span className="text-xs text-slate-500">
                                             {new Date(grant.created_at).toLocaleDateString()}
                                         </span>
