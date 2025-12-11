@@ -3,10 +3,10 @@ from typing import Optional, List
 from datetime import datetime
 
 class UserBase(BaseModel):
-    address: str = Field(..., max_length=5000)
+    address: str = Field(..., max_length=20000)
 
 class UserCreate(UserBase):
-    encryption_public_key: str = Field(..., max_length=5000)
+    encryption_public_key: str = Field(..., max_length=20000)
 
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, max_length=200)
@@ -39,8 +39,8 @@ class SecretResponse(SecretBase):
 
 class AccessGrantCreate(BaseModel):
     secret_id: int
-    grantee_address: str = Field(..., max_length=5000)
-    encrypted_key: str = Field(..., max_length=5000)
+    grantee_address: str = Field(..., max_length=20000)
+    encrypted_key: str = Field(..., max_length=20000)
     expires_in: Optional[int] = None # Seconds
 
 class AccessGrantResponse(BaseModel):
@@ -59,7 +59,7 @@ class AccessGrantResponse(BaseModel):
 class DocumentBase(BaseModel):
     name: str = Field(..., max_length=200)
     content_hash: str = Field(..., max_length=500)
-    signature: str = Field(..., max_length=5000)
+    signature: str = Field(..., max_length=20000)
 
 class DocumentCreate(DocumentBase):
     pass
@@ -73,10 +73,10 @@ class DocumentResponse(DocumentBase):
         orm_mode = True
 
 class LoginRequest(BaseModel):
-    address: str = Field(..., max_length=5000)
-    signature: str = Field(..., max_length=5000)
+    address: str = Field(..., max_length=20000)
+    signature: str = Field(..., max_length=20000)
     nonce: str = Field(..., max_length=200)
-    encryption_public_key: Optional[str] = Field(None, max_length=5000)
+    encryption_public_key: Optional[str] = Field(None, max_length=20000)
 
 class RecoveryShareStore(BaseModel):
     token: str = Field(..., max_length=50000) # Google Tokens can be long-ish
