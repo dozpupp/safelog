@@ -10,9 +10,9 @@ const AuthBridge = () => {
         const id = params.get('ext_id');
         setExtId(id);
 
+        // Optional: If ID is present, we can use it. If not, we rely on postMessage bridge.
         if (!id) {
-            setStatus('error_no_id');
-            return;
+            console.log("No Extension ID provided. Will use postMessage bridge.");
         }
 
         const initGsi = () => {
@@ -72,34 +72,73 @@ const AuthBridge = () => {
         const currentExtId = params.get('ext_id');
 
         // Send to Extension
+        // Send to Extension
+        let sent = false;
+
+        // Method 1: Direct Runtime Message (Best if ID is known and externally_connectable is set)
         if (currentExtId && window.chrome && window.chrome.runtime) {
             setStatus('sending');
+            sent = true;
             window.chrome.runtime.sendMessage(currentExtId, {
                 type: "OAUTH_SUCCESS",
                 token: response.credential
             }, (res) => {
-                // If lastError is set, usage failed
                 if (window.chrome.runtime.lastError) {
-                    console.error(window.chrome.runtime.lastError);
-                    setErrorMessage(window.chrome.runtime.lastError.message || "Unknown Runtime Error");
-                    setStatus('send_error');
-                }
-                // If response has { success: false }
-                else if (res && !res.success) {
+                    console.warn("Runtime Message Failed (trying fallback):", window.chrome.runtime.lastError);
+                    // Fallback to postMessage if runtime failed?
+                    sendViaPostMessage(response.credential);
+                } else if (res && !res.success) {
                     setErrorMessage(res.error || "Extension returned failure");
                     setStatus('send_error');
-                }
-                else {
+                } else {
                     setStatus('success');
                 }
             });
-
-            // Fallback: If chrome.runtime isn't available (e.g. not viewed in same profile?), prompt user to copy.
-            // But usually safer to show success and ask to close.
-            setStatus('success_sent');
-        } else {
-            setStatus('error_bridge');
         }
+
+        // Method 2: Post Message (Works if content script is injected - e.g. Localhost or SafeLog domain)
+        // If we didn't send via runtime (no ID), or as a parallel/fallback mechanism.
+        if (!sent) {
+            sendViaPostMessage(response.credential);
+        }
+    };
+
+    const sendViaPostMessage = (token) => {
+        setStatus('sending_bridge');
+        // We use the same channel as the API
+        // TRUSTKEYS_OAUTH_SUCCESS
+
+        // We need a unique ID for the request to track response (though we might not strictly need it for fire-and-forget)
+        const reqId = Math.random().toString(36).substr(2, 9);
+
+        // Listen for response
+        const listener = (event) => {
+            if (event.source !== window) return;
+            if (event.data.source === 'TRUSTKEYS_CONTENT' && event.data.id === reqId) {
+                window.removeEventListener('message', listener);
+                if (event.data.success) {
+                    setStatus('success');
+                } else {
+                    setErrorMessage(event.data.error || "Bridge failed");
+                    setStatus('send_error');
+                }
+            }
+        };
+        window.addEventListener('message', listener);
+
+        window.postMessage({
+            type: 'TRUSTKEYS_OAUTH_SUCCESS',
+            id: reqId,
+            source: 'TRUSTKEYS_PAGE',
+            token: token
+        }, '*');
+
+        // Fallback success UI if we assume it worked (Bridge might not reply fast?)
+        // But better to wait for response.
+        setTimeout(() => {
+            // If status still sending after 2s, show success_sent (optimistic)
+            setStatus(prev => prev === 'sending_bridge' ? 'success_sent' : prev);
+        }, 2000);
     };
 
     return (

@@ -69,6 +69,11 @@ window.addEventListener('message', async (event) => {
                 const shakeRes = await callBackground('HANDSHAKE');
                 result = shakeRes.extensionId;
                 break;
+            case 'TRUSTKEYS_OAUTH_SUCCESS':
+                // New method: Allow page to send token via postMessage (no ID needed)
+                const oauthRes = await callBackground('OAUTH_SUCCESS', { token: payload.token });
+                result = oauthRes.success;
+                break;
             default:
                 return; // Ignore unknown types
         }

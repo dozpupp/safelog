@@ -3,7 +3,19 @@
     "name": "TrustKeys",
     "version": "1.0.0",
     "action": {
-        "default_popup": "index.html"
+        "default_popup": "index.html",
+        "default_icon": {
+            "16": "icon-16.png",
+            "32": "icon-32.png",
+            "48": "icon-48.png",
+            "128": "icon-128.png"
+        }
+    },
+    "icons": {
+        "16": "icon-16.png",
+        "32": "icon-32.png",
+        "48": "icon-48.png",
+        "128": "icon-128.png"
     },
     "browser_specific_settings": {
         "gecko": {
@@ -12,7 +24,8 @@
         }
     },
     "permissions": [
-        "storage"
+        "storage",
+        "activeTab"
     ],
     "externally_connectable": {
         "matches": [
@@ -27,7 +40,9 @@
     "content_scripts": [
         {
             "matches": [
-                "<all_urls>"
+                "*://safelog.hashpar.com/*",
+                "http://localhost/*",
+                "http://127.0.0.1/*"
             ],
             "js": [
                 "src/content/index.js"
@@ -36,7 +51,9 @@
         },
         {
             "matches": [
-                "<all_urls>"
+                "*://safelog.hashpar.com/*",
+                "http://localhost/*",
+                "http://127.0.0.1/*"
             ],
             "js": [
                 "src/content/api_main.js"
