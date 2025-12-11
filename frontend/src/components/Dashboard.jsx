@@ -565,9 +565,9 @@ export default function Dashboard() {
             <header className="max-w-5xl mx-auto flex justify-between items-center mb-10">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-indigo-500/20 rounded-lg flex items-center justify-center">
-                        <Lock className="w-5 h-5 text-indigo-400" />
+                        <Lock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                     </div>
-                    <h1 className="text-2xl font-bold text-white">SecureVault</h1>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">SecureVault</h1>
                 </div>
                 <div className="flex items-center gap-4">
                     <button
@@ -578,7 +578,7 @@ export default function Dashboard() {
                     </button>
                     <div
                         onClick={() => setIsProfileOpen(true)}
-                        className="px-4 py-2 bg-slate-900 rounded-lg border border-slate-800 text-sm font-mono text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer transition-colors flex items-center gap-2"
+                        className="px-4 py-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-sm font-mono text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer transition-colors flex items-center gap-2"
                     >
                         <User className="w-4 h-4" />
                         {user?.username || `${user?.address?.slice(0, 6)}...${user?.address?.slice(-4)}`}
@@ -941,8 +941,8 @@ export default function Dashboard() {
                                 <div key={secret.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-3 mb-2">
-                                            <div className="p-2 bg-slate-800 rounded-lg">
-                                                <FileText className="w-4 h-4 text-indigo-400" />
+                                            <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                                <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                                             </div>
                                             <h3 className="font-medium text-slate-900 dark:text-white">{secret.name}</h3>
                                             <span className="text-xs text-slate-500">
@@ -1018,8 +1018,8 @@ export default function Dashboard() {
                             <div key={`shared-${grant.id}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all">
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-2">
-                                        <div className="p-2 bg-slate-800 rounded-lg">
-                                            <FileText className="w-4 h-4 text-indigo-400" />
+                                        <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                            <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                                         </div>
                                         <h3 className="font-medium text-slate-900 dark:text-white">{grant.secret?.name || 'Unknown Secret'}</h3>
                                         <span className="text-xs text-slate-500">
