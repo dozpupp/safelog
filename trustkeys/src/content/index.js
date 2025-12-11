@@ -65,6 +65,10 @@ window.addEventListener('message', async (event) => {
                 const checkRes = await callBackground('CHECK_CONNECTION', { origin: window.location.origin });
                 result = checkRes.connected;
                 break;
+            case 'TRUSTKEYS_HANDSHAKE':
+                const shakeRes = await callBackground('HANDSHAKE');
+                result = shakeRes.extensionId;
+                break;
             default:
                 return; // Ignore unknown types
         }

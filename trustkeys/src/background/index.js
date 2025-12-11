@@ -146,6 +146,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     sendResponse({ success: true, connected: isConnected });
                     break;
                 }
+                case 'HANDSHAKE': {
+                    // Return extension ID for verification
+                    sendResponse({ success: true, extensionId: chrome.runtime.id });
+                    break;
+                }
                 case 'CONNECT': {
 
                     if (state.isLocked) {
@@ -213,33 +218,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
 
                 // --- Accounts ---
-                case 'BACKUP_TO_GOOGLE': {
 
-                    if (state.isLocked) throw new Error("Vault is locked");
-                    const { password, token } = request;
-                    const { apiUrl } = await chrome.storage.local.get('apiUrl');
-                    // Default to localhost:8000 as requested
-                    const apiBase = apiUrl || 'http://localhost:8000';
-                    // Placeholder for actual backup logic
-                    sendResponse({ success: false, error: "Backup to Google not yet implemented" });
-                    break;
-                }
-                case 'RESTORE_FROM_GOOGLE': {
 
-                    const { password, token } = request;
-                    const { apiUrl } = await chrome.storage.local.get('apiUrl');
-                    // Default to localhost:8000 as requested
-                    const apiBase = apiUrl || 'http://localhost:8000';
-
-                    // 1. Fetch
-                    sendResponse({ success: false, error: "Restore from Google not yet implemented" });
-                    break;
-                }
                 case 'CREATE_ACCOUNT': {
 
                     if (state.isLocked) throw new Error("Locked");
                     // Only allow internal creation
-                    if (!sender.url || !sender.url.includes('index.html')) {
+                    if (sender.id !== chrome.runtime.id) {
                         throw new Error("Unauthorized: Internal use only");
                     }
 
@@ -255,7 +240,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     // UI Polling usually triggers this?
                     if (state.isLocked) throw new Error("Locked");
                     // Only allow internal
-                    if (!sender.url || !sender.url.includes('index.html')) {
+                    if (sender.id !== chrome.runtime.id) {
                         throw new Error("Unauthorized: Internal use only");
                     }
 
@@ -272,7 +257,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 case 'SET_ACTIVE_ACCOUNT': {
 
                     if (state.isLocked) throw new Error("Locked");
-                    if (!sender.url || !sender.url.includes('index.html')) {
+                    if (sender.id !== chrome.runtime.id) {
                         throw new Error("Unauthorized: Internal use only");
                     }
                     state.vault.activeAccountId = request.id;
@@ -287,7 +272,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
                     if (state.isLocked) throw new Error("Locked");
 
-                    const isInternal = sender.url && sender.url.includes('index.html') && sender.id === chrome.runtime.id;
+                    const isInternal = sender.id === chrome.runtime.id;
                     if (!isInternal) {
                         // External: Check Permissions
                         const checkOrigin = sender.origin || request.origin; // From content script
@@ -318,7 +303,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 case 'EXPORT_KEYS': {
 
                     if (state.isLocked) throw new Error("Locked");
-                    if (!sender.url || !sender.url.includes('index.html')) {
+                    if (sender.id !== chrome.runtime.id) {
                         throw new Error("Unauthorized: Internal use only");
                     }
 
@@ -340,7 +325,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 case 'IMPORT_KEYS': {
 
                     if (state.isLocked) throw new Error("Locked");
-                    if (!sender.url || !sender.url.includes('index.html')) {
+                    if (sender.id !== chrome.runtime.id) {
                         throw new Error("Unauthorized: Internal use only");
                     }
 

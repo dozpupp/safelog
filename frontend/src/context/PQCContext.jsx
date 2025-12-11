@@ -30,6 +30,20 @@ export const PQCProvider = ({ children }) => {
         const connected = await window.trustkeys.connect();
         if (!connected) throw new Error("Connection request rejected by user.");
 
+        // 1.5 Security Handshake
+        // Verify we are talking to the real extension
+        if (window.trustkeys.handshake) {
+            const extId = await window.trustkeys.handshake();
+            const expectedId = import.meta.env.VITE_TRUSTKEYS_EXTENSION_ID;
+
+            if (expectedId && extId !== expectedId) {
+                console.error(`Extension ID Mismatch: Expected ${expectedId}, got ${extId}`);
+                throw new Error("Security Error: Extension verification failed. Possible spoofing detected.");
+            }
+        } else {
+            console.warn("TrustKeys Extension too old: Missing handshake.");
+        }
+
         // 2. Get Account (Dilithium PK is our ID)
         const tkAccount = await window.trustkeys.getAccount();
         const accountId = tkAccount.dilithiumPublicKey;

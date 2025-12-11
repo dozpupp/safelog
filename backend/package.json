@@ -11,5 +11,8 @@
   "description": "",
   "dependencies": {
     "dilithium-crystals-js": "^1.1.3"
+  },
+  "engines": {
+    "node": ">=22.13.1"
   }
 }

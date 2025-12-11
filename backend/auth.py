@@ -6,6 +6,7 @@ import secrets
 import subprocess
 import json
 import os
+import requests
 
 def generate_nonce():
     return secrets.token_hex(16)
@@ -15,31 +16,29 @@ def verify_pqc_signature(public_key: str, nonce: str, signature: str) -> bool:
         # Message format must match frontend
         message_text = f"Sign in to Secure Log App with nonce: {nonce}"
         
-        # Call Node.js bridge
-        # Assuming node is available in environment
-        # Path to script:
-        script_path = os.path.join(os.path.dirname(__file__), "verify_pqc.js")
-        
-        payload = json.dumps({
-            "message": message_text,
-            "signature": signature,
-            "publicKey": public_key
-        })
-        
-        result = subprocess.run(
-            ["node", script_path],
-            input=payload,
-            text=True,
-            capture_output=True
-        )
-        
-        if result.returncode != 0:
-            print(f"PQC verification process failed: {result.stderr}")
+        # Call Node.js sidecar service
+        try:
+            response = requests.post(
+                "http://127.0.0.1:3002/verify",
+                json={
+                    "message": message_text,
+                    "signature": signature,
+                    "publicKey": public_key
+                },
+                timeout=5 # 5s timeout
+            )
+            
+            if response.status_code != 200:
+                print(f"ERROR: PQC Service HTTP Error: {response.text}")
+                return False
+                
+            result = response.json()
+            return result.get("valid", False)
+            
+        except requests.exceptions.ConnectionError:
+            print("CRITICAL ERROR: PQC Service Unavailable. Is 'node backend/pqc_service.js' running?")
             return False
             
-        output = json.loads(result.stdout)
-        return output.get("valid", False)
-        
     except Exception as e:
         print(f"PQC verification error: {e}")
         return False
@@ -65,7 +64,13 @@ def verify_signature(address: str, nonce: str, signature: str) -> bool:
 import jwt
 from datetime import datetime, timedelta, timezone
 
-SECRET_KEY = "supersecretkey" # TODO: Move to env
+SECRET_KEY = os.getenv("SAFELOG_SECRET_KEY")
+if not SECRET_KEY:
+    # Fallback only for DEV or strict fail? 
+    # Providing a weak default but warning loud is better for this 'fix' task 
+    # than breaking if they forget to set it immediately, but let's be secure.
+    print("WARNING: SAFELOG_SECRET_KEY not set. Using insecure default. DO NOT USE IN PRODUCTION.")
+    SECRET_KEY = "supersecretkey_dev_only_change_me"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

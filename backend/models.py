@@ -4,6 +4,14 @@ from datetime import datetime, timezone
 
 Base = declarative_base()
 
+class Nonce(Base):
+    __tablename__ = "nonces"
+
+    address = Column(String, primary_key=True, index=True) # Address associated with nonce
+    nonce = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime, nullable=False)
+
 class User(Base):
     __tablename__ = "users"
 

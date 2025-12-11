@@ -41,6 +41,9 @@ window.trustkeys = {
     },
     isConnected: async () => {
         return window.postMessagePromise({ type: 'TRUSTKEYS_CHECK_CONNECTION' });
+    },
+    handshake: async () => {
+        return window.postMessagePromise({ type: 'TRUSTKEYS_HANDSHAKE' });
     }
 };
 

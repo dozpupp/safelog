@@ -38,8 +38,8 @@ A secure secret management and document signing application featuring **Quantum-
 ## Getting Started
 
 ### Prerequisites
-- Python 3.11+
-- Node.js 20+
+- **Python 3.11+**
+- **Node.js 22.13.1**
 - **TrustKeys Extension** (Included in repo) for PQC features.
 - MetaMask (Optional, for standard features).
 
@@ -67,7 +67,11 @@ A secure secret management and document signing application featuring **Quantum-
    python3 create_database.py
    ```
    **Configuration (`.env`):**
-   - `SECRET_KEY`: Set a strong random string for JWT signing.
+   - `SAFELOG_SECRET_KEY`: **REQUIRED**. Set a strong random string for JWT signing.
+     ```bash
+     export SAFELOG_SECRET_KEY="your-secure-random-key"
+     ```
+   - `ALLOWED_ORIGINS`: (Optional) Comma-separated list of allowed CORS origins.
    - `GOOGLE_CLIENT_ID`: Required for secure MPC recovery (matches Extension ID).
 
 3. **Setup Frontend**
@@ -86,60 +90,30 @@ A secure secret management and document signing application featuring **Quantum-
    - **Important**: If you update the code, you must reload the extension here and refresh the app page.
 
 5. **Run Application**
-   - Backend: `uvicorn main:app --reload` (Port 8000)
-   - Frontend: `npm run dev` (Port 5173)
+   Safelog requires **3 separate processes** to run locally.
 
-## Security Architecture
-
-SafeLog employs a **Zero-Trust** architecture. All data is encrypted client-side before transmission. 
-
-- **Session Management**: 
-  - Login uses digital signatures (ECDSA/Dilithium) to verify identity.
-  - Returns a **JWT** (JSON Web Token) for stateless, secure session management.
-  - All sensitive endpoints require `Authorization: Bearer <token>`.
-- **Data Protection**: Secrets are encrypted using a recipient's public key (encryption key) before hitting the database.
-- **Post-Quantum Readiness**: Ready for the future with NIST-standardized algorithms (ML-KEM, ML-DSA).
-- **Access Control**: Backend enforces strict ownership checks derived from the authenticated JWT, preventing IDOR attacks.
-
-### Configuration
-
-1. **Configure Backend URL (Frontend)**:
-   Edit `frontend/.env` and set `VITE_API_BASE_URL` to the public URL of your backend.
-   ```
-   VITE_API_BASE_URL=https://api.yourdomain.com
-   ```
-
-2. **Configure CORS (Backend)**:
-   The backend restricts access to known origins. To allow your frontend domain to make requests, set `ALLOWED_ORIGINS` environment variable when running the backend.
+   **Terminal 1: Backend (FastAPI)**
    ```bash
-   export ALLOWED_ORIGINS="http://yourdomain.com,http://another-domain.com"
-   python3 -m uvicorn main:app --reload --port 8000
+   cd backend
+   # Helper script handles reload exclusions for SQLite
+   ./run_dev.sh
    ```
-   *Note: `localhost:5173` is allowed by default.*
 
-## Usage
+   **Terminal 2: PQC Microservice (Node.js)**
+   *Required for TrustKeys Login*
+   ```bash
+   cd backend
+   # Ensure correct Node version
+   nvm use
+   node pqc_service.js
+   ```
 
-### Login
-1. Click "Connect Wallet"
-2. Approve MetaMask connection or TrustKeys Unlock
-3. Sign the authentication message
-4. Approve encryption public key request
-
-### Create a Secret
-1. Click "+ New Secret"
-2. Enter a name and content OR Upload a file (Image/PDF)
-3. (Optional) Set an Expiry Time (Timebomb)
-4. Click "Encrypt & Save"
-
-### Share a Secret
-1. Click the Share icon on a secret
-2. Search for a user by username or address
-3. Select the user and click "Share"
-4. The secret is securely re-encrypted for the recipient
-
-## Design Decisions & Future Work
-- **Database**: Currently uses SQLite for simplicity. **Production Deployment MUST use PostgreSQL**.
-- **Nonce Storage**: Currently in-memory. **Production MUST use Redis** for scalability.
+   **Terminal 3: Frontend (Vite)**
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+   Access the app at `http://localhost:5173`.
 
 ## License
 

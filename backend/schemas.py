@@ -1,15 +1,15 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
 class UserBase(BaseModel):
-    address: str
+    address: str = Field(..., max_length=5000)
 
 class UserCreate(UserBase):
-    encryption_public_key: str
+    encryption_public_key: str = Field(..., max_length=5000)
 
 class UserUpdate(BaseModel):
-    username: Optional[str] = None
+    username: Optional[str] = Field(None, max_length=200)
 
 class UserResponse(UserBase):
     username: Optional[str]
@@ -20,8 +20,10 @@ class UserResponse(UserBase):
         orm_mode = True
 
 class SecretBase(BaseModel):
-    name: str
-    encrypted_data: str
+    name: str = Field(..., max_length=200)
+    # 50MB limit for encrypted files (50 * 1024 * 1024 approx 52 million chars)
+    # Base64 overhead typically 33%, so a 35MB file becomes ~48MB text.
+    encrypted_data: str = Field(..., max_length=52_500_000)
 
 class SecretCreate(SecretBase):
     pass
@@ -37,8 +39,8 @@ class SecretResponse(SecretBase):
 
 class AccessGrantCreate(BaseModel):
     secret_id: int
-    grantee_address: str
-    encrypted_key: str
+    grantee_address: str = Field(..., max_length=5000)
+    encrypted_key: str = Field(..., max_length=5000)
     expires_in: Optional[int] = None # Seconds
 
 class AccessGrantResponse(BaseModel):
@@ -55,9 +57,9 @@ class AccessGrantResponse(BaseModel):
         orm_mode = True
 
 class DocumentBase(BaseModel):
-    name: str
-    content_hash: str
-    signature: str
+    name: str = Field(..., max_length=200)
+    content_hash: str = Field(..., max_length=500)
+    signature: str = Field(..., max_length=5000)
 
 class DocumentCreate(DocumentBase):
     pass
@@ -71,17 +73,17 @@ class DocumentResponse(DocumentBase):
         orm_mode = True
 
 class LoginRequest(BaseModel):
-    address: str
-    signature: str
-    nonce: str
-    encryption_public_key: Optional[str] = None
+    address: str = Field(..., max_length=5000)
+    signature: str = Field(..., max_length=5000)
+    nonce: str = Field(..., max_length=200)
+    encryption_public_key: Optional[str] = Field(None, max_length=5000)
 
 class RecoveryShareStore(BaseModel):
-    token: str # Google ID Token
-    share_data: str
+    token: str = Field(..., max_length=50000) # Google Tokens can be long-ish
+    share_data: str = Field(..., max_length=50000) # MPC share checks
 
 class RecoveryShareFetch(BaseModel):
-    token: str
+    token: str = Field(..., max_length=50000)
 
 class RecoveryShareResponse(BaseModel):
     share_data: str

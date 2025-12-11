@@ -17,17 +17,15 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
 # CORS configuration
-origins = [
-    "http://localhost:5173", # Vite default port
-    "http://127.0.0.1:5173",
-    "https://safelog.hashpar.com", # Production Frontend
-    "https://safeapi.hashpar.com", # Production Backend (Self)
-]
+origins = []
 
 # Add allowed origins from environment variable
 env_origins = os.getenv("ALLOWED_ORIGINS")
 if env_origins:
     origins.extend([origin.strip() for origin in env_origins.split(",")])
+
+if not origins:
+    print("WARNING: ALLOWED_ORIGINS not set. CORS will block all requests.")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,14 +35,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory nonce storage for simplicity (use Redis in production)
-nonces = {}
+# In-memory nonce storage removed in favor of DB
+# nonces = {}
 
 @app.get("/auth/nonce/{address}")
-def get_nonce(address: str):
-    nonce = auth.generate_nonce()
-    nonces[address.lower()] = nonce
-    return {"nonce": nonce}
+def get_nonce(address: str, db: Session = Depends(get_db)):
+    # Cleanup expired nonces first (lazy cleanup)
+    now = datetime.now(timezone.utc)
+    db.query(models.Nonce).filter(models.Nonce.expires_at <= now).delete()
+    
+    nonce_val = auth.generate_nonce()
+    expires = datetime.now(timezone.utc) + timedelta(minutes=5)
+    
+    # Upsert logic
+    new_nonce = models.Nonce(address=address.lower(), nonce=nonce_val, expires_at=expires)
+    db.merge(new_nonce) # Updates if exists
+    db.commit()
+    
+    return {"nonce": nonce_val}
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
@@ -69,19 +77,28 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 @app.post("/auth/login", response_model=schemas.Token)
 def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     address = request.address.lower()
-    expected_nonce = nonces.get(address)
     
-    if not expected_nonce:
+    # Fetch nonce from DB
+    nonce_entry = db.query(models.Nonce).filter(models.Nonce.address == address).first()
+    
+    if not nonce_entry:
         raise HTTPException(status_code=400, detail="Nonce not found. Request a nonce first.")
+        
+    # Check expiry
+    if nonce_entry.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
+        db.delete(nonce_entry)
+        db.commit()
+        raise HTTPException(status_code=400, detail="Nonce expired.")
     
-    if request.nonce != expected_nonce:
+    if request.nonce != nonce_entry.nonce:
          raise HTTPException(status_code=400, detail="Invalid nonce.")
 
     if not auth.verify_signature(address, request.nonce, request.signature):
         raise HTTPException(status_code=401, detail="Invalid signature")
     
-    # Cleanup nonce
-    del nonces[address]
+    # Cleanup nonce (Anti-replay)
+    db.delete(nonce_entry)
+    db.commit()
     
     # Find or create user
     user = db.query(models.User).filter(models.User.address == address).first()
