@@ -34,20 +34,31 @@ const saveVault = async (password) => {
 
 const launchPopup = async (route, params = {}) => {
     const queryString = new URLSearchParams({ route, ...params }).toString();
-
-    // Check if popup already exists? For now, just create new.
-    // Calculate center of screen
     const width = 360;
     const height = 600;
 
-    // Get current window to center against? 
-    // Just default position or let browser decide.
+    let left, top;
+
+    try {
+        // Attempt to position in top-right of current window
+        const lastWin = await chrome.windows.getLastFocused();
+        if (lastWin && lastWin.left !== undefined && lastWin.width !== undefined) {
+            // Position: Right side with 20px padding, Top with 80px padding (account for toolbar)
+            left = lastWin.left + lastWin.width - width - 20;
+            top = lastWin.top + 80;
+        }
+    } catch (e) {
+        // Fallback to OS default if we can't get window info
+        console.warn("Failed to calculate popup position", e);
+    }
 
     await chrome.windows.create({
         url: `index.html?${queryString}`,
         type: 'popup',
         width,
         height,
+        left,
+        top,
         focused: true
     });
 };
