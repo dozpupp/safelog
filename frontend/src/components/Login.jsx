@@ -1,33 +1,82 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWeb3 } from '../context/Web3Context';
 import { usePQC } from '../context/PQCContext';
 import { useTheme } from '../context/ThemeContext';
-import { Shield, Wallet, ArrowRight, Loader2, Sun, Moon } from 'lucide-react';
+import { Shield, Wallet, ArrowRight, Loader2, Sun, Moon, Lock, UserPlus, X } from 'lucide-react';
 
 export default function Login() {
     const { login } = useWeb3();
-    const { loginTrustKeys } = usePQC();
+    const { loginTrustKeys, loginLocalVault, createLocalVault, isExtensionAvailable, hasLocalVault } = usePQC();
     const { theme, toggleTheme } = useTheme();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [activeMethod, setActiveMethod] = useState(null);
 
+    // Local Vault UI State
+    const [showVaultModal, setShowVaultModal] = useState(false);
+    const [vaultMode, setVaultMode] = useState('unlock'); // 'unlock' | 'create'
+    const [password, setPassword] = useState('');
+    const [vaultName, setVaultName] = useState('');
+
+    useEffect(() => {
+        if (showVaultModal) {
+            setVaultMode(hasLocalVault ? 'unlock' : 'create');
+        }
+    }, [showVaultModal, hasLocalVault]);
+
     const handleLogin = async (method) => {
+        setError(null);
+        if (method === 'trustkeys') {
+            if (isExtensionAvailable) {
+                setLoading(true);
+                setActiveMethod('trustkeys');
+                try {
+                    await loginTrustKeys();
+                } catch (err) {
+                    console.error("Login error:", err);
+                    setError(`Failed to login: ${err.message || 'Please try again.'} `);
+                } finally {
+                    setLoading(false);
+                    setActiveMethod(null);
+                }
+            } else {
+                // Open Local Vault Modal
+                setShowVaultModal(true);
+            }
+        } else {
+            setLoading(true);
+            setActiveMethod(method);
+            try {
+                await login();
+            } catch (err) {
+                console.error("Login error:", err);
+                setError(`Failed to login: ${err.message || 'Please try again.'} `);
+            } finally {
+                setLoading(false);
+                setActiveMethod(null);
+            }
+        }
+    };
+
+    const handleVaultSubmit = async (e) => {
+        e.preventDefault();
         setLoading(true);
-        setActiveMethod(method);
         setError(null);
         try {
-            if (method === 'trustkeys') {
-                await loginTrustKeys();
+            if (vaultMode === 'create') {
+                if (!vaultName || !password) throw new Error("Name and Password required");
+                if (password.length < 6) throw new Error("Password must be at least 6 characters");
+                await createLocalVault(vaultName, password);
             } else {
-                await login();
+                if (!password) throw new Error("Password required");
+                await loginLocalVault(password);
             }
+            setShowVaultModal(false);
         } catch (err) {
-            console.error("Login error:", err);
-            setError(`Failed to login: ${err.message || 'Please try again.'} `);
+            console.error("Vault Action Error:", err);
+            setError(err.message);
         } finally {
             setLoading(false);
-            setActiveMethod(null);
         }
     };
 
@@ -39,7 +88,7 @@ export default function Login() {
             >
                 {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-            <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 shadow-2xl transition-colors duration-200">
+            <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 shadow-2xl transition-colors duration-200 relative">
                 <div className="flex flex-col items-center text-center mb-8">
                     <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-500/10 rounded-full flex items-center justify-center mb-4">
                         <Shield className="w-8 h-8 text-indigo-600 dark:text-indigo-500" />
@@ -50,7 +99,7 @@ export default function Login() {
                     </p>
                 </div>
 
-                {error && (
+                {error && !showVaultModal && (
                     <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm text-center">
                         {error}
                     </div>
@@ -82,11 +131,79 @@ export default function Login() {
                     ) : (
                         <>
                             <Shield className="w-5 h-5" />
-                            <span>Connect with TrustKeys (PQC)</span>
+                            <span>
+                                {isExtensionAvailable ? 'Connect with TrustKeys' : 'Connect with Local Vault'}
+                            </span>
                             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                         </>
                     )}
                 </button>
+
+                {/* Local Vault Modal Overlay */}
+                {showVaultModal && (
+                    <div className="absolute inset-0 bg-white dark:bg-slate-900 rounded-2xl p-8 flex flex-col z-10 animate-in fade-in zoom-in-95">
+                        <button
+                            onClick={() => setShowVaultModal(false)}
+                            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        <div className="flex flex-col items-center mb-6">
+                            <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center mb-3">
+                                {vaultMode === 'create' ? <UserPlus className="w-6 h-6 text-emerald-500" /> : <Lock className="w-6 h-6 text-emerald-500" />}
+                            </div>
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                                {vaultMode === 'create' ? 'Create Local Vault' : 'Unlock Vault'}
+                            </h2>
+                            <p className="text-sm text-slate-500 mt-1">
+                                {vaultMode === 'create'
+                                    ? 'Setup a secure local PQC wallet.'
+                                    : 'Enter password to access keys.'}
+                            </p>
+                        </div>
+
+                        {error && (
+                            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs text-center">
+                                {error}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleVaultSubmit} className="space-y-4 flex-1">
+                            {vaultMode === 'create' && (
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">Account Name</label>
+                                    <input
+                                        type="text"
+                                        value={vaultName}
+                                        onChange={e => setVaultName(e.target.value)}
+                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                                        placeholder="e.g. Main Account"
+                                        autoFocus
+                                    />
+                                </div>
+                            )}
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Password</label>
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                                    placeholder="Enter secure password"
+                                />
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition-all duration-200 mt-4 flex items-center justify-center"
+                            >
+                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : (vaultMode === 'create' ? 'Create & Connect' : 'Unlock & Connect')}
+                            </button>
+                        </form>
+                    </div>
+                )}
             </div>
         </div>
     );

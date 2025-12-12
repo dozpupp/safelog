@@ -16,6 +16,15 @@ A secure secret management and document signing application featuring **Quantum-
 - 🤝 **Secure Sharing** - Share encrypted secrets between any user type (Eth ↔ PQC).
 - 👤 **User Profiles** - Manage usernames and view PQC identities.
 
+## ⚠️ Security Notices
+
+> [!WARNING]
+> **Local Vault Usage (Extension-less Mode)**
+> When using the Local Vault, your PQC keys are encrypted and stored in your browser's `localStorage`.
+> - **Data Loss Risk**: Clearing your browser cache or site data **will permanently delete your keys**, resulting in total loss of account access.
+> - **Security Trade-off**: While keys are encrypted with your password, browser storage is generally less secure than a dedicated extension sandbox.
+> - **Recommendation**: **Regularly export your vault** (Manage Vault -> Export) and store the backup safely. Use the TrustKeys Extension for maximum security.
+
 ## Tech Stack
 
 ### Backend (`/backend`)

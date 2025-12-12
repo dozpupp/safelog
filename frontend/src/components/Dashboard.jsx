@@ -3,8 +3,9 @@ import { useAuth } from '../context/AuthContext';
 import { useWeb3 } from '../context/Web3Context';
 import { usePQC } from '../context/PQCContext';
 import { useTheme } from '../context/ThemeContext';
+import VaultManager from './VaultManager';
 import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypto';
-import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon } from 'lucide-react';
+import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon, Shield } from 'lucide-react';
 import API_ENDPOINTS from '../config';
 
 const DisplayField = ({ label, value }) => {
@@ -47,11 +48,13 @@ export default function Dashboard() {
     const { user, setUser, authType, token, logout } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const { currentAccount, encryptionPublicKey: ethKey } = useWeb3();
-    const { kyberKey, encrypt: encryptPQC, decrypt: decryptPQC } = usePQC();
+    const { kyberKey, pqcAccount, encrypt: encryptPQC, decrypt: decryptPQC, hasLocalVault, isExtensionAvailable } = usePQC();
 
     // Unify state based on Auth Type
     const encryptionPublicKey = authType === 'trustkeys' ? kyberKey : ethKey;
-
+    // For PQC, account ID is the Dilithium Public Key (pqcAccount)
+    const currentDisplayAccount = authType === 'trustkeys' ? pqcAccount : currentAccount;
+    const [showVaultManager, setShowVaultManager] = useState(false);
     const [secrets, setSecrets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [newSecretName, setNewSecretName] = useState('');
@@ -572,23 +575,44 @@ export default function Dashboard() {
                 <div className="flex items-center gap-4">
                     <button
                         onClick={toggleTheme}
-                        className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-600 dark:text-slate-400"
+                        className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                     >
                         {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                     </button>
-                    <div
-                        onClick={() => setIsProfileOpen(true)}
-                        className="px-4 py-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-sm font-mono text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white cursor-pointer transition-colors flex items-center gap-2"
-                    >
-                        <User className="w-4 h-4" />
-                        {user?.username || `${user?.address?.slice(0, 6)}...${user?.address?.slice(-4)}`}
+
+                    {/* Local Vault Manager Button */}
+                    {authType === 'trustkeys' && hasLocalVault && !isExtensionAvailable && (
+                        <button
+                            onClick={() => setShowVaultManager(true)}
+                            className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg hover:bg-emerald-500/20 transition-colors text-sm font-medium"
+                        >
+                            <Shield className="w-4 h-4" /> Manage Vault
+                        </button>
+                    )}
+
+                    <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-slate-800">
+                        <button
+                            onClick={() => setIsProfileOpen(true)}
+                            className="flex items-center gap-3 text-left hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-lg transition-colors"
+                        >
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-medium text-sm">
+                                {user?.username?.[0]?.toUpperCase() || 'U'}
+                            </div>
+                            <div className="hidden md:block text-sm">
+                                <div className="font-medium text-slate-900 dark:text-white">{user?.username || 'User'}</div>
+                                <div className="text-slate-500 text-xs truncate max-w-[100px]" title={currentDisplayAccount}>
+                                    {currentDisplayAccount ? `${currentDisplayAccount.substring(0, 6)}...${currentDisplayAccount.substring(currentDisplayAccount.length - 4)}` : 'Connected'}
+                                </div>
+                            </div>
+                        </button>
+                        <button
+                            onClick={logout}
+                            className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                            title="Logout"
+                        >
+                            <LogOut className="w-5 h-5" />
+                        </button>
                     </div>
-                    <button
-                        onClick={logout}
-                        className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
-                    >
-                        <LogOut className="w-5 h-5 text-slate-400" />
-                    </button>
                 </div>
             </header>
 
@@ -629,12 +653,12 @@ export default function Dashboard() {
 
                                     <DisplayField
                                         label={authType === 'trustkeys' ? "ML-DSA (Dilithium) / User ID" : "Wallet Address"}
-                                        value={user?.address}
+                                        value={currentDisplayAccount}
                                     />
 
                                     <DisplayField
                                         label={authType === 'trustkeys' ? "ML-KEM (Kyber) / Encryption Key" : "Public Key"}
-                                        value={user?.encryption_public_key}
+                                        value={encryptionPublicKey}
                                     />
 
                                     <div className="flex justify-end gap-3 mt-6">
@@ -1064,7 +1088,10 @@ export default function Dashboard() {
                         ))}
                     </div>
                 )}
-            </main >
-        </div >
+            </main>
+            {showVaultManager && (
+                <VaultManager onClose={() => setShowVaultManager(false)} />
+            )}
+        </div>
     );
 }

@@ -12,7 +12,7 @@ const AuthBridge = () => {
 
         // Optional: If ID is present, we can use it. If not, we rely on postMessage bridge.
         if (!id) {
-            console.log("No Extension ID provided. Will use postMessage bridge.");
+            // console.log("No Extension ID provided. Will use postMessage bridge.");
         }
 
         const initGsi = () => {
