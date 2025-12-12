@@ -152,11 +152,20 @@ export const PQCProvider = ({ children }) => {
     const encrypt = async (content, publicKey) => {
         if (isExtensionAvailable && window.trustkeys) {
             return await window.trustkeys.encrypt(content, publicKey || kyberKey);
-        } else if (!vaultService.isLocked) {
+        } else {
+            // Fallback: Use internal library if we have a key
+            // This allows MetaMask users to encrypt for PQC users without vault
+            if (!publicKey && vaultService.isLocked) {
+                // If no public key provided AND vault locked (no kyberKey), we can't encrypt
+                throw new Error("PQC Provider not ready (Locked or Missing)");
+            }
+
+            const targetKey = publicKey || kyberKey;
+            if (!targetKey) throw new Error("No encryption key available");
+
             const { encryptMessagePQC } = await import('../utils/crypto');
-            return await encryptMessagePQC(content, publicKey || kyberKey);
+            return await encryptMessagePQC(content, targetKey);
         }
-        throw new Error("PQC Provider not ready (Locked or Missing)");
     };
 
     const decrypt = async (encryptedObject) => {
