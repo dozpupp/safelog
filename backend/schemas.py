@@ -40,7 +40,7 @@ class SecretResponse(SecretBase):
 class AccessGrantCreate(BaseModel):
     secret_id: int
     grantee_address: str = Field(..., max_length=20000)
-    encrypted_key: str = Field(..., max_length=20000)
+    encrypted_key: str = Field(..., max_length=52_500_000)
     expires_in: Optional[int] = None # Seconds
 
 class AccessGrantResponse(BaseModel):
