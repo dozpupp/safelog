@@ -81,10 +81,12 @@ class VaultService {
 
     async switchAccount(id) {
         if (this.isLocked) throw new Error("Vault locked");
+        console.log("VaultService: switching to", id);
         const exists = this.vault.accounts.find(a => a.id === id);
         if (!exists) throw new Error("Account not found");
         this.vault.activeAccountId = id;
         await this.save();
+        console.log("VaultService: active account is now", this.vault.activeAccountId);
         return exists;
     }
 
@@ -117,7 +119,17 @@ class VaultService {
             // Merge strategy: Add accounts that don't exist (by ID)
             let addedCount = 0;
             for (const acc of data.accounts) {
-                if (!this.vault.accounts.find(existing => existing.id === acc.id)) {
+                // FORCE ID normalization: ID must be the Public Key
+                if (acc.dilithium && acc.dilithium.publicKey) {
+                    acc.id = acc.dilithium.publicKey;
+                }
+
+                const existingIndex = this.vault.accounts.findIndex(existing => existing.id === acc.id);
+                if (existingIndex >= 0) {
+                    // Overwrite existing account with imported data
+                    this.vault.accounts[existingIndex] = acc;
+                    addedCount++;
+                } else {
                     this.vault.accounts.push(acc);
                     addedCount++;
                 }

@@ -14,7 +14,7 @@ export const usePQC = () => {
 };
 
 export const PQCProvider = ({ children }) => {
-    const { login: authLogin } = useAuth();
+    const { login: authLogin, logout: authLogout } = useAuth();
     const [pqcAccount, setPqcAccount] = useState(null); // Dilithium Public Key
     const [kyberKey, setKyberKey] = useState(null);
     const [isExtensionAvailable, setIsExtensionAvailable] = useState(false);
@@ -151,12 +151,22 @@ export const PQCProvider = ({ children }) => {
 
     const switchVaultAccount = async (id) => {
         const account = await vaultService.switchAccount(id);
+
         const accountId = account.dilithium.publicKey;
         const encryptionKey = account.kyber.publicKey;
 
         setPqcAccount(accountId);
         setKyberKey(encryptionKey);
-        // Note: Caller might need to trigger login/re-auth if session depends on address
+
+        // Force re-login with the new account to sync backend session
+        try {
+            authLogout(); // Clear previous session first
+            await performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg));
+        } catch (e) {
+            console.error("PQCContext: Auto-login failed after switch", e);
+            throw new Error("Switched account but login failed: " + e.message);
+        }
+
         return account;
     };
 

@@ -109,15 +109,6 @@ export const decryptData = async (encryptedDataStr, address) => {
 //
 // They are incompatible in signature. One takes a Private Key, the other an Address (and uses window.ethereum).
 //
-// I will export:
-// `signMessage` (as the PQC one, matching VaultService)
-// `signMessageWeb3` (for Web3Context) -> I need to update Web3Context too.
-// OR
-// keep `signMessage` for Web3 (legacy support) and rename PQC one.
-// VaultService I just created, checking usages...
-// VaultService calls `signMessage(message, account.dilithium.privateKey)`.
-// Web3Context calls `signMessage(message, account)`.
-//
 // I will keep `signMessage` as the original Web3 one to minimize breakage in existing code (Dashboard etc might use it?).
 // And rename PQC one to `signMessagePQC`.
 // Then I update `VaultService` and `PQCContext` (if it uses it directly).
@@ -147,8 +138,14 @@ export const generateKyberKeyPair = async () => {
 export const generateDilithiumKeyPair = async () => {
     try {
         const mod = await initDilithium();
-        // Use level 2 (matches standard expectation in library apparently)
-        const { publicKey, privateKey } = mod.generateKeys(2);
+
+        // Generate valid random seed to ensure uniqueness
+        const seed = new Uint8Array(32);
+        crypto.getRandomValues(seed);
+
+        // Pass seed to generateKeys (level, seed)
+        const { publicKey, privateKey } = mod.generateKeys(2, seed);
+
         return {
             publicKey: toHex(publicKey),
             privateKey: toHex(privateKey),
@@ -164,7 +161,7 @@ export const generateAccount = async (name) => {
     const dilithium = await generateDilithiumKeyPair();
 
     return {
-        id: crypto.randomUUID(),
+        id: dilithium.publicKey, // Use Public Key as ID for consistency
         name,
         kyber,
         dilithium,
