@@ -565,8 +565,8 @@ export default function Dashboard() {
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 p-6 transition-colors duration-200">
-            <header className="max-w-5xl mx-auto flex justify-between items-center mb-10">
-                <div className="flex items-center gap-3">
+            <header className="max-w-5xl mx-auto flex flex-col sm:flex-row gap-4 justify-between items-center mb-10">
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-center sm:justify-start">
                     <div className="w-10 h-10 bg-indigo-500/20 rounded-lg flex items-center justify-center">
                         <Lock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                     </div>
@@ -962,14 +962,14 @@ export default function Dashboard() {
                     ) : (
                         <div className="grid gap-4">
                             {secrets.map(secret => (
-                                <div key={secret.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all">
-                                    <div className="flex-1">
+                                <div key={secret.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col sm:flex-row items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all gap-4 sm:gap-0">
+                                    <div className="flex-1 w-full">
                                         <div className="flex items-center gap-3 mb-2">
                                             <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
                                                 <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                                             </div>
-                                            <h3 className="font-medium text-slate-900 dark:text-white">{secret.name}</h3>
-                                            <span className="text-xs text-slate-500">
+                                            <h3 className="font-medium text-slate-900 dark:text-white truncate">{secret.name}</h3>
+                                            <span className="text-xs text-slate-500 shrink-0">
                                                 {new Date(secret.created_at).toLocaleDateString()}
                                             </span>
                                         </div>
@@ -986,7 +986,7 @@ export default function Dashboard() {
                                         )}
                                     </div>
 
-                                    <div className="flex items-center gap-2 ml-4">
+                                    <div className="flex items-center gap-2 ml-0 sm:ml-4 w-full sm:w-auto justify-end border-t sm:border-t-0 border-slate-100 dark:border-slate-800 pt-3 sm:pt-0 mt-2 sm:mt-0">
                                         {!decryptedSecrets[secret.id] && (
                                             <button
                                                 onClick={() => handleDecrypt(secret)}
