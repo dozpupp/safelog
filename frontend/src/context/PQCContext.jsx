@@ -13,12 +13,22 @@ export const usePQC = () => {
     return context;
 };
 
+import PasswordModal from '../components/PasswordModal';
+
 export const PQCProvider = ({ children }) => {
     const { login: authLogin, logout: authLogout } = useAuth();
     const [pqcAccount, setPqcAccount] = useState(null); // Dilithium Public Key
     const [kyberKey, setKyberKey] = useState(null);
     const [isExtensionAvailable, setIsExtensionAvailable] = useState(false);
     const [hasLocalVault, setHasLocalVault] = useState(false);
+
+    // Modal State
+    const [modalConfig, setModalConfig] = useState({
+        isOpen: false,
+        message: '',
+        resolve: null,
+        reject: null
+    });
 
     useEffect(() => {
         // Check availability on mount and slightly after (for injection delay)
@@ -30,6 +40,32 @@ export const PQCProvider = ({ children }) => {
         const t = setTimeout(check, 500);
         return () => clearTimeout(t);
     }, []);
+
+    // Internal helper to request password via Modal
+    const requestPassword = (message = "Please enter your vault password to continue.") => {
+        return new Promise((resolve, reject) => {
+            setModalConfig({
+                isOpen: true,
+                message,
+                resolve,
+                reject
+            });
+        });
+    };
+
+    const handleModalSubmit = (password) => {
+        if (modalConfig.resolve) {
+            modalConfig.resolve(password);
+        }
+        setModalConfig({ ...modalConfig, isOpen: false, resolve: null, reject: null });
+    };
+
+    const handleModalCancel = () => {
+        if (modalConfig.reject) {
+            modalConfig.reject(new Error("User cancelled password prompt"));
+        }
+        setModalConfig({ ...modalConfig, isOpen: false, resolve: null, reject: null });
+    };
 
     const performServerLogin = async (accountId, encryptionKey, signFn) => {
         // 1. Get Nonce
@@ -68,17 +104,13 @@ export const PQCProvider = ({ children }) => {
             throw new Error("Extension not found");
         }
 
-        // 1. Connect
         const connected = await window.trustkeys.connect();
         if (!connected) throw new Error("Connection request rejected.");
 
-        // Handshake skipped for brevity/compatibility, or keep it if needed
         if (window.trustkeys.handshake) {
             await window.trustkeys.handshake();
-            // Ignore ID check for now to allow flexible dev
         }
 
-        // 2. Get Account
         const tkAccount = await window.trustkeys.getAccount();
         const accountId = tkAccount.dilithiumPublicKey;
         const encryptionKey = tkAccount.kyberPublicKey;
@@ -100,7 +132,8 @@ export const PQCProvider = ({ children }) => {
         setPqcAccount(accountId);
         setKyberKey(encryptionKey);
 
-        return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg));
+        // Pass known password
+        return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password));
     };
 
     const createLocalVault = async (name, password) => {
@@ -108,25 +141,18 @@ export const PQCProvider = ({ children }) => {
         const accountId = account.dilithium.publicKey;
         const encryptionKey = account.kyber.publicKey;
 
-        // Refresh state
         setHasLocalVault(true);
 
         setPqcAccount(accountId);
         setKyberKey(encryptionKey);
 
-        return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg));
+        return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password));
     };
 
     const encrypt = async (content, publicKey) => {
         if (isExtensionAvailable && window.trustkeys) {
             return await window.trustkeys.encrypt(content, publicKey || kyberKey);
         } else if (!vaultService.isLocked) {
-            // Local encrypt (note: encryptMessage in crypto.js is stateless, doesn't need unlock, but nice to have consistent API)
-            // Actually encrypt uses Public Key, so it doesn't strictly require unlock, 
-            // but our `encryptMessage` import is available.
-            // VaultService doesn't expose `encrypt` directly? 
-            // Let's import it or add it to VaultService.
-            // Actually, `vaultService` should helper methods.
             const { encryptMessagePQC } = await import('../utils/crypto');
             return await encryptMessagePQC(content, publicKey || kyberKey);
         }
@@ -137,7 +163,8 @@ export const PQCProvider = ({ children }) => {
         if (isExtensionAvailable && window.trustkeys) {
             return await window.trustkeys.decrypt(encryptedObject);
         } else if (!vaultService.isLocked) {
-            return await vaultService.decrypt(encryptedObject);
+            const password = await requestPassword("Enter password to decrypt data:");
+            return await vaultService.decrypt(encryptedObject, password);
         }
         throw new Error("PQC Provider not ready (Locked or Missing)");
     };
@@ -145,12 +172,14 @@ export const PQCProvider = ({ children }) => {
     const getVaultAccounts = () => vaultService.getAccounts();
 
     const addVaultAccount = async (name) => {
-        const acc = await vaultService.addAccount(name);
+        const password = await requestPassword("Enter password to create new account:");
+        const acc = await vaultService.addAccount(name, password);
         return acc;
     };
 
     const switchVaultAccount = async (id) => {
-        const account = await vaultService.switchAccount(id);
+        const password = await requestPassword("Enter password to switch account:");
+        const account = await vaultService.switchAccount(id, password);
 
         const accountId = account.dilithium.publicKey;
         const encryptionKey = account.kyber.publicKey;
@@ -158,10 +187,9 @@ export const PQCProvider = ({ children }) => {
         setPqcAccount(accountId);
         setKyberKey(encryptionKey);
 
-        // Force re-login with the new account to sync backend session
         try {
-            authLogout(); // Clear previous session first
-            await performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg));
+            authLogout();
+            await performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password));
         } catch (e) {
             console.error("PQCContext: Auto-login failed after switch", e);
             throw new Error("Switched account but login failed: " + e.message);
@@ -171,9 +199,9 @@ export const PQCProvider = ({ children }) => {
     };
 
     const deleteVaultAccount = async (id) => {
-        await vaultService.deleteAccount(id);
-        // If the deleted account was active, vaultService auto-switches.
-        // We need to sync state.
+        const password = await requestPassword("Enter password to DELETE account:");
+        await vaultService.deleteAccount(id, password);
+
         const current = vaultService.getActiveAccount();
         if (current) {
             setPqcAccount(current.dilithium.publicKey);
@@ -181,8 +209,15 @@ export const PQCProvider = ({ children }) => {
         }
     };
 
-    const exportVault = async () => vaultService.exportVault();
-    const importVault = async (json) => vaultService.importVault(json);
+    const exportVault = async () => {
+        const password = await requestPassword("Enter password to EXPORT vault:");
+        return vaultService.exportVault(password);
+    };
+
+    const importVault = async (json) => {
+        const password = await requestPassword("Enter password to IMPORT vault:");
+        return vaultService.importVault(json, password);
+    };
 
     return (
         <PQCContext.Provider value={{
@@ -202,8 +237,14 @@ export const PQCProvider = ({ children }) => {
             exportVault,
             importVault
         }}>
-
             {children}
+
+            <PasswordModal
+                isOpen={modalConfig.isOpen}
+                message={modalConfig.message}
+                onSubmit={handleModalSubmit}
+                onCancel={handleModalCancel}
+            />
         </PQCContext.Provider>
     );
 };
