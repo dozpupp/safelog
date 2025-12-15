@@ -125,6 +125,22 @@ A secure secret management and document signing application featuring **Quantum-
    ```
    Access the app at `http://localhost:5173`.
 
+## 🚀 Production Configuration
+
+### Nginx Setup (PQC Large Headers)
+Post-Quantum Cryptography signatures (Dilithium2) are significantly larger than standard ECDSA signatures. This increases the JWT size to ~3KB.
+**You must increase the buffer size in your Nginx configuration** to avoid `400 Bad Request` or `431 Request Header Fields Too Large`.
+
+Edit your Nginx config (`/etc/nginx/nginx.conf` or site config):
+```nginx
+http {
+    # ...
+    client_header_buffer_size 4k;
+    large_client_header_buffers 4 16k;
+    # ...
+}
+```
+
 ## License
 
 MIT
