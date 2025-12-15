@@ -22,7 +22,9 @@ origins = []
 # Add allowed origins from environment variable
 env_origins = os.getenv("ALLOWED_ORIGINS")
 if env_origins:
-    origins.extend([origin.strip() for origin in env_origins.split(",")])
+    # Split by comma, strip whitespace, and remove trailing slashes
+    origins.extend([origin.strip().rstrip("/") for origin in env_origins.split(",")])
+    print(f"INFO: Loaded ALLOWED_ORIGINS: {origins}")
 
 if not origins:
     print("WARNING: ALLOWED_ORIGINS not set. CORS will block all requests.")
