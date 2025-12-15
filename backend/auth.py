@@ -2,11 +2,37 @@ from eth_account.messages import encode_defunct
 from eth_account import Account
 from web3 import Web3
 import secrets
-
-import subprocess
+import base64
 import json
-import os
 import requests
+import os
+from datetime import datetime, timedelta, timezone
+
+# --- PQC Service Config ---
+PQC_SERVICE_URL = "http://127.0.0.1:3002"
+_SERVER_PUBLIC_KEY = None
+
+def get_server_public_key():
+    global _SERVER_PUBLIC_KEY
+    if _SERVER_PUBLIC_KEY:
+        return _SERVER_PUBLIC_KEY
+    try:
+        res = requests.get(f"{PQC_SERVICE_URL}/server-public-key", timeout=2)
+        if res.status_code == 200:
+            _SERVER_PUBLIC_KEY = res.json().get("publicKey")
+            return _SERVER_PUBLIC_KEY
+    except Exception as e:
+        print(f"Error fetching server public key: {e}")
+    return None
+
+def b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b'=').decode('utf-8')
+
+def b64url_decode(data: str) -> bytes:
+    padding = 4 - (len(data) % 4)
+    if padding != 4:
+        data += '=' * padding
+    return base64.urlsafe_b64decode(data)
 
 def generate_nonce():
     return secrets.token_hex(16)
@@ -19,13 +45,13 @@ def verify_pqc_signature(public_key: str, nonce: str, signature: str) -> bool:
         # Call Node.js sidecar service
         try:
             response = requests.post(
-                "http://127.0.0.1:3002/verify",
+                f"{PQC_SERVICE_URL}/verify",
                 json={
                     "message": message_text,
                     "signature": signature,
                     "publicKey": public_key
                 },
-                timeout=5 # 5s timeout
+                timeout=5
             )
             
             if response.status_code != 200:
@@ -44,34 +70,18 @@ def verify_pqc_signature(public_key: str, nonce: str, signature: str) -> bool:
         return False
 
 def verify_signature(address: str, nonce: str, signature: str) -> bool:
-    # Check if address is actually a PQC Public Key
-    # PQC keys (Dilithium) are long hex strings compared to Eth addresses (42 chars)
     if len(address) > 42:
         return verify_pqc_signature(address, nonce, signature)
 
     try:
-        # Standard Ethereum Verification
         message_text = f"Sign in to Secure Log App with nonce: {nonce}"
         encoded_message = encode_defunct(text=message_text)
-        
         recovered_address = Account.recover_message(encoded_message, signature=signature)
-        
         return recovered_address.lower() == address.lower()
     except Exception as e:
         print(f"Signature verification failed: {e}")
         return False
 
-import jwt
-from datetime import datetime, timedelta, timezone
-
-SECRET_KEY = os.getenv("SAFELOG_SECRET_KEY")
-if not SECRET_KEY:
-    # Fallback only for DEV or strict fail? 
-    # Providing a weak default but warning loud is better for this 'fix' task 
-    # than breaking if they forget to set it immediately, but let's be secure.
-    print("WARNING: SAFELOG_SECRET_KEY not set. Using insecure default. DO NOT USE IN PRODUCTION.")
-    SECRET_KEY = "supersecretkey_dev_only_change_me"
-ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -80,13 +90,81 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    
+    # Store expiry as timestamp
+    to_encode.update({"exp": expire.timestamp()})
+    
+    # 1. Prepare Header and Payload
+    header = {"alg": "DILITHIUM2", "typ": "JWT"}
+    header_b64 = b64url_encode(json.dumps(header).encode('utf-8'))
+    payload_b64 = b64url_encode(json.dumps(to_encode).encode('utf-8'))
+    
+    message = f"{header_b64}.{payload_b64}"
+    
+    # 2. Sign via PQC Service
+    try:
+        res = requests.post(f"{PQC_SERVICE_URL}/sign", json={"message": message}, timeout=5)
+        if res.status_code != 200:
+            raise Exception(f"Signing failed: {res.text}")
+        
+        signature_hex = res.json()["signature"]
+        # Convert hex signature to base64url for compact JWT format
+        signature_bytes = bytes.fromhex(signature_hex)
+        signature_b64 = b64url_encode(signature_bytes)
+        
+        return f"{message}.{signature_b64}"
+    except Exception as e:
+        print(f"Token creation failed: {e}")
+        return None
 
 def decode_access_token(token: str):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        parts = token.split('.')
+        if len(parts) != 3:
+            return None
+            
+        header_b64, payload_b64, signature_b64 = parts
+        message = f"{header_b64}.{payload_b64}"
+        
+        # 1. Decode Signature
+        signature_bytes = b64url_decode(signature_b64)
+        signature_hex = signature_bytes.hex()
+        
+        # 2. Get Server Key
+        server_key = get_server_public_key()
+        if not server_key:
+            return None
+            
+        # 3. Verify via PQC Service (Using the message as the data signed)
+        res = requests.post(
+            f"{PQC_SERVICE_URL}/verify",
+            json={
+                "message": message,
+                "signature": signature_hex,
+                "publicKey": server_key
+            },
+            timeout=2
+        )
+        
+        valid = False
+        if res.status_code == 200:
+            valid = res.json().get("valid", False)
+            
+        if not valid:
+            return None
+            
+        # 4. Decode Payload if valid
+        payload_json = b64url_decode(payload_b64).decode('utf-8')
+        payload = json.loads(payload_json)
+        
+        # 5. Check Expiry
+        exp = payload.get("exp")
+        if exp:
+            if datetime.now(timezone.utc).timestamp() > exp:
+                return None
+                
         return payload
-    except jwt.PyJWTError:
+        
+    except Exception as e:
+        print(f"Token decode error: {e}")
         return None

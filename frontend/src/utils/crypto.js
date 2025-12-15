@@ -292,8 +292,8 @@ async function deriveKey(password, salt) {
         {
             name: "PBKDF2",
             salt: salt,
-            iterations: 100000,
-            hash: "SHA-256"
+            iterations: 600000, // OWASP Recommended (was 100k)
+            hash: "SHA-512"   // Hardened from SHA-256
         },
         keyMaterial,
         { name: "AES-GCM", length: 256 },
@@ -322,7 +322,7 @@ export const encryptVault = async (data, password) => {
     return {
         salt: toHex(salt),
         iv: toHex(iv),
-        data: toHex(new Uint8Array(encryptedContent))
+        data: toHex(new Uint8Array(encryptedContent)) // Returns Hex for easy storage
     };
 };
 

@@ -4,9 +4,9 @@ A secure secret management and document signing application featuring **Quantum-
 
 ## Features
 
-- 🔐 **Dual Authentication** - Login with **MetaMask** (Ethereum) or **TrustKeys** (Post-Quantum) using secure JWT sessions.
+- 🔐 **Dual Authentication** - Login with **MetaMask** (Ethereum) or **TrustKeys** (Post-Quantum) using secure **Dilithium-Signed JWTs**.
 - 🧬 **Quantum-Proof Cryptography** - Integration with **Crystals-Kyber** (ML-KEM) and **Crystals-Dilithium** (ML-DSA).
-- 🛡️ **Secure Vault** - Client-side encryption ensures the server never sees your secrets.
+- 🛡️ **Hardened Secure Vault** - AES-256 + SHA-512 KDF (600k iterations) ensures locally stored keys are safe from quantum/brute-force attacks.
 - 📂 **File Vault** - Securely upload, encrypt, and share files (Images, PDFs, etc.).
 - 💣 **Timebomb Access** - Share secrets with self-destruct timers (Ephemeral Access).
 - ☁️ **MPC Recovery** - Backup your PQC identity using **Google ID** (Multi-Party Computation) without entrusting your full key to any single party.
@@ -24,6 +24,7 @@ A secure secret management and document signing application featuring **Quantum-
 > - **Data Loss Risk**: Clearing your browser cache or site data **will permanently delete your keys**, resulting in total loss of account access.
 > - **Security Trade-off**: While keys are encrypted with your password, browser storage is generally less secure than a dedicated extension sandbox.
 > - **Recommendation**: **Regularly export your vault** (Manage Vault -> Export) and store the backup safely. Use the TrustKeys Extension for maximum security.
+> - **Encryption**: We use **AES-256-GCM** derived via **PBKDF2-SHA-512** (600,000 iterations) for maximum resistance against GPU/Quantum cracking.
 
 ## Tech Stack
 
