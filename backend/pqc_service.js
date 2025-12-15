@@ -1,12 +1,11 @@
 const http = require('http');
 const dilithiumPromise = require('dilithium-crystals-js');
 const { Buffer } = require('buffer');
-const fs = require('fs');
-const path = require('path');
+const crypto = require('crypto');
+require('dotenv').config();
 
 const HOST = '127.0.0.1';
 const PORT = 3002;
-const KEY_FILE = path.join(__dirname, 'server_keys.json');
 
 // Initialize Crypto and Keys
 let dilithium = null;
@@ -15,42 +14,25 @@ let serverKeys = null;
 const toHex = (arr) => Buffer.from(arr).toString('hex');
 const fromHex = (hex) => new Uint8Array(Buffer.from(hex, 'hex'));
 
-const saveKeys = (keys) => {
-    fs.writeFileSync(KEY_FILE, JSON.stringify({
-        publicKey: toHex(keys.publicKey),
-        privateKey: toHex(keys.privateKey)
-    }, null, 2));
-    console.log("[PQC Service] New Server Keys generated and saved.");
-};
-
-const loadOrGenerateKeys = (mod) => {
-    if (fs.existsSync(KEY_FILE)) {
-        try {
-            const data = JSON.parse(fs.readFileSync(KEY_FILE, 'utf8'));
-            serverKeys = {
-                publicKey: fromHex(data.publicKey),
-                privateKey: fromHex(data.privateKey)
-            };
-            console.log("[PQC Service] Server Keys loaded.");
-        } catch (e) {
-            console.error("[PQC Service] Error loading keys, regenerating...", e);
-        }
+// Deterministic Key Generation from Secret
+const generateKeysFromSecret = (mod) => {
+    let secret = process.env.SAFELOG_SECRET_KEY;
+    if (!secret) {
+        console.warn("[PQC Service] WARNING: SAFELOG_SECRET_KEY not set. Using insecure default.");
+        secret = "dev_secret_key_change_me"; // Fallback for dev
     }
 
-    if (!serverKeys) {
-        // Generate new keys (Dilithium2)
-        const seed = new Uint8Array(32);
-        const rand = require('crypto').randomBytes(32);
-        seed.set(rand);
+    // Hash secret to get 32-byte seed
+    const seed = crypto.createHash('sha256').update(secret).digest();
 
-        serverKeys = mod.generateKeys(2, seed);
-        saveKeys(serverKeys);
-    }
+    // Generate Deterministic Keys
+    serverKeys = mod.generateKeys(2, seed);
+    console.log("[PQC Service] Server Keys generated deterministically from secret.");
 };
 
 dilithiumPromise.then(mod => {
     dilithium = mod;
-    loadOrGenerateKeys(mod);
+    generateKeysFromSecret(mod);
     console.log(`[PQC Service] Ready on http://${HOST}:${PORT}`);
 });
 
