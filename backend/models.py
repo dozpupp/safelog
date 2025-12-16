@@ -29,6 +29,7 @@ class Secret(Base):
     id = Column(Integer, primary_key=True, index=True)
     owner_address = Column(String, ForeignKey("users.address"))
     name = Column(String, index=True)
+    type = Column(String, default="standard") # 'standard' or 'signed_document'
     encrypted_data = Column(Text) # JSON blob: {version, nonce, ephemPublicKey, ciphertext}
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

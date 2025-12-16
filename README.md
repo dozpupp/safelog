@@ -14,6 +14,7 @@ A secure secret management and document signing application featuring **Quantum-
   - Standard Users: ECDH + AES (MetaMask).
   - PQC Users: Kyber-768 Encapsulation + AES-GCM (TrustKeys).
 - 🤝 **Secure Sharing** - Share encrypted secrets between any user type (Eth ↔ PQC).
+- ✍️ **Signed Documents** - Create, share, and verify digitally signed documents (Sign-then-Encrypt) to prove authorship.
 - 👤 **User Profiles** - Manage usernames and view PQC identities.
 
 ## ⚠️ Security Notices
@@ -43,7 +44,7 @@ A secure secret management and document signing application featuring **Quantum-
 - **Browser Extension** - Manages PQC keys securely.
 - **WASM Cryptography** - High-performance ML-KEM and ML-DSA implementation.
 - **Encrypted Vault** - AES-256-GCM protection for private keys.
-- **MPC Recovery** - Google-authenticated key reconstruction.
+- **MPC Recovery** - Google-authenticated key reconstruction. (not active yet)
 
 ## Getting Started
  

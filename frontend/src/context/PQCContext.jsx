@@ -168,6 +168,16 @@ export const PQCProvider = ({ children }) => {
         }
     };
 
+    const sign = async (message) => {
+        if (isExtensionAvailable && window.trustkeys) {
+            return await window.trustkeys.sign(message);
+        } else if (!vaultService.isLocked) {
+            const password = await requestPassword("Enter password to sign document:");
+            return await vaultService.sign(message, password);
+        }
+        throw new Error("PQC Provider not ready (Locked or Missing)");
+    };
+
     const decrypt = async (encryptedObject) => {
         if (isExtensionAvailable && window.trustkeys) {
             return await window.trustkeys.decrypt(encryptedObject);
@@ -239,6 +249,7 @@ export const PQCProvider = ({ children }) => {
             createLocalVault,
             encrypt,
             decrypt,
+            sign,
             getVaultAccounts,
             addVaultAccount,
             switchVaultAccount,

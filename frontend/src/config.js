@@ -9,6 +9,7 @@ export const API_ENDPOINTS = {
         GET: (address) => `${API_BASE_URL}/users/${address}`,
         LIST: `${API_BASE_URL}/users`,
         UPDATE: (address) => `${API_BASE_URL}/users/${address}`,
+        RESOLVE: `${API_BASE_URL}/users/resolve`,
     },
     SECRETS: {
         LIST: `${API_BASE_URL}/secrets`,

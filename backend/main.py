@@ -165,11 +165,23 @@ def list_users(search: str = None, limit: int = 5, offset: int = 0, db: Session 
     
     return query.limit(limit).offset(offset).all()
 
+class UserResolveRequest(schemas.BaseModel):
+    address: str
+
+@app.post("/users/resolve", response_model=schemas.UserResponse)
+def resolve_user(req: UserResolveRequest, db: Session = Depends(get_db)):
+    # Helper to resolve user by address (Eth or PQC)
+    user = db.query(models.User).filter(models.User.address == req.address).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
 @app.post("/secrets", response_model=schemas.SecretResponse)
 def create_secret(secret: schemas.SecretCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     new_secret = models.Secret(
         owner_address=current_user.address,
         name=secret.name,
+        type=secret.type,
         encrypted_data=secret.encrypted_data
     )
     db.add(new_secret)

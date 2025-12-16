@@ -21,6 +21,7 @@ class UserResponse(UserBase):
 
 class SecretBase(BaseModel):
     name: str = Field(..., max_length=200)
+    type: str = Field("standard") # 'standard' | 'signed_document'
     # 50MB limit for encrypted files (50 * 1024 * 1024 approx 52 million chars)
     # Base64 overhead typically 33%, so a 35MB file becomes ~48MB text.
     encrypted_data: str = Field(..., max_length=52_500_000)

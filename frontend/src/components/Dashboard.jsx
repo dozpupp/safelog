@@ -5,7 +5,8 @@ import { usePQC } from '../context/PQCContext';
 import { useTheme } from '../context/ThemeContext';
 import VaultManager from './VaultManager';
 import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypto';
-import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon, Shield } from 'lucide-react';
+import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon, Shield, FileSignature, BadgeCheck, AlertTriangle } from 'lucide-react';
+import { verifySignaturePQC } from '../utils/crypto';
 import API_ENDPOINTS from '../config';
 
 const DisplayField = ({ label, value }) => {
@@ -48,7 +49,7 @@ export default function Dashboard() {
     const { user, setUser, authType, token, logout } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const { currentAccount, encryptionPublicKey: ethKey } = useWeb3();
-    const { kyberKey, pqcAccount, encrypt: encryptPQC, decrypt: decryptPQC, hasLocalVault, isExtensionAvailable } = usePQC();
+    const { kyberKey, pqcAccount, encrypt: encryptPQC, decrypt: decryptPQC, sign: signPQC, hasLocalVault, isExtensionAvailable } = usePQC();
 
     // Unify state based on Auth Type
     const encryptionPublicKey = authType === 'trustkeys' ? kyberKey : ethKey;
@@ -85,6 +86,8 @@ export default function Dashboard() {
     const [selectedFile, setSelectedFile] = useState(null);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [statusMessage, setStatusMessage] = useState('');
+    const [isSigned, setIsSigned] = useState(false);
+    const [verificationResult, setVerificationResult] = useState(null); // { valid, signer }
 
     const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -395,38 +398,61 @@ export default function Dashboard() {
                 return;
             }
 
+            if (isSigned && authType !== 'trustkeys') {
+                alert("Signing requires TrustKeys login (PQC).");
+                return;
+            }
+
             setUploadProgress(10);
             setStatusMessage("Reading...");
 
-            let dataToEncrypt;
+            let rawContent;
             if (contentType === 'file') {
                 // Convert file to Base64
                 const base64 = await readFileAsBase64(selectedFile);
-                dataToEncrypt = JSON.stringify({
+                rawContent = JSON.stringify({
                     type: 'file',
                     name: selectedFile.name,
                     mime: selectedFile.type,
                     content: base64
                 });
             } else {
-                dataToEncrypt = newSecretContent;
+                rawContent = newSecretContent;
+            }
+
+            // Signing Logic
+            let payloadToEncrypt = rawContent;
+            let secretType = 'standard';
+
+            if (isSigned) {
+                setStatusMessage("Signing...");
+                // 1. Sign
+                const signature = await signPQC(rawContent); // Sign the EXACT content string
+
+                // 2. Wrap
+                const signedPayload = {
+                    content: rawContent,
+                    signature: signature,
+                    signerPublicKey: pqcAccount
+                };
+                payloadToEncrypt = JSON.stringify(signedPayload);
+                secretType = 'signed_document';
             }
 
             setUploadProgress(40);
             setStatusMessage("Encrypting...");
 
-            // Artificial delay for small files so user sees the UI? 
-            // optional, but helpful for UX feel. Let's not force it too much.
+            // Artificial delay for small files so user sees the UI
             await new Promise(r => setTimeout(r, 200));
 
             let encrypted;
             if (authType === 'trustkeys') {
                 // PQC Encryption
-                const res = await encryptPQC(dataToEncrypt, encryptionPublicKey);
+                const res = await encryptPQC(payloadToEncrypt, encryptionPublicKey);
                 encrypted = JSON.stringify(res);
             } else {
                 // Standard Encryption
-                encrypted = encryptData(dataToEncrypt, encryptionPublicKey);
+                encrypted = encryptData(payloadToEncrypt, encryptionPublicKey);
             }
 
             setUploadProgress(70);
@@ -440,6 +466,7 @@ export default function Dashboard() {
                 },
                 body: JSON.stringify({
                     name: newSecretName,
+                    type: secretType,
                     encrypted_data: encrypted
                 })
             });
@@ -447,13 +474,14 @@ export default function Dashboard() {
             if (createRes.ok) {
                 setUploadProgress(100);
                 setStatusMessage("Done!");
-                await new Promise(r => setTimeout(r, 500)); // Show 100% briefly
+                await new Promise(r => setTimeout(r, 500));
 
                 setNewSecretName('');
                 setNewSecretContent('');
                 setSelectedFile(null);
                 setContentType('text');
                 setIsCreating(false);
+                setIsSigned(false); // Reset
                 setUploadProgress(0);
                 setStatusMessage('');
                 fetchSecrets();
@@ -465,7 +493,7 @@ export default function Dashboard() {
             }
         } catch (error) {
             console.error("Failed to create secret", error);
-            alert("Failed to create secret");
+            alert("Failed to create secret: " + error.message);
             setUploadProgress(0);
             setStatusMessage('');
         }
@@ -498,17 +526,70 @@ export default function Dashboard() {
         }
     };
 
-    const renderDecryptedContent = (content) => {
+    const handleVerify = async (docData) => {
         try {
-            // Check if it's a file payload
-            const parsed = JSON.parse(content);
-            if (parsed && parsed.type === 'file' && parsed.content) {
-                return (
+            if (!docData.signature || !docData.signerPublicKey) {
+                alert("Invalid document format for verification.");
+                return;
+            }
+
+            const isValid = await verifySignaturePQC(docData.content, docData.signature, docData.signerPublicKey);
+
+            // Resolve User
+            let signerInfo = null;
+            try {
+                const res = await fetch(API_ENDPOINTS.USERS.RESOLVE, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: docData.signerPublicKey })
+                });
+                if (res.ok) {
+                    signerInfo = await res.json();
+                }
+            } catch (e) {
+                console.warn("Could not resolve signer user", e);
+            }
+
+            setVerificationResult({
+                valid: isValid,
+                signer: signerInfo,
+                publicKey: docData.signerPublicKey
+            });
+
+        } catch (e) {
+            console.error("Verification failed", e);
+            alert("Verification error: " + e.message);
+        }
+    };
+
+    const renderDecryptedContent = (rawContent, secretItem) => {
+        let content = rawContent;
+        let isSignedDoc = false;
+        let signedPayload = null;
+
+        // Check if it's a Signed Document wrapper
+        try {
+            const parsed = JSON.parse(rawContent);
+            if (parsed.signature && parsed.signerPublicKey && parsed.content) {
+                isSignedDoc = true;
+                signedPayload = parsed;
+                content = parsed.content; // The actual data
+            }
+        } catch (e) {
+            // Not a signed wrapper, standard content
+        }
+
+        // Inner Content Rendering (File or Text)
+        let innerDisplay = content;
+        try {
+            const parsedInner = JSON.parse(content);
+            if (parsedInner && parsedInner.type === 'file' && parsedInner.content) {
+                innerDisplay = (
                     <div className="flex flex-col gap-2">
                         <div className="flex items-center gap-2 text-indigo-300">
                             <FileText className="w-4 h-4" />
-                            <span className="font-medium">{parsed.name}</span>
-                            <span className="text-xs text-slate-500">({parsed.mime})</span>
+                            <span className="font-medium">{parsedInner.name}</span>
+                            <span className="text-xs text-slate-500">({parsedInner.mime})</span>
                         </div>
                         <button
                             onClick={() => handleDownload(content)}
@@ -519,10 +600,53 @@ export default function Dashboard() {
                     </div>
                 );
             }
-        } catch (e) {
-            // Not JSON or Not File -> Text
-        }
-        return content;
+        } catch (e) { }
+
+        return (
+            <div className="space-y-4">
+                {isSignedDoc && (
+                    <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
+                            <FileSignature className="w-5 h-5" />
+                            <span className="font-medium text-sm">Digitally Signed Document</span>
+                        </div>
+                        <button
+                            onClick={() => handleVerify(signedPayload)}
+                            className="text-xs px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-500 transition-colors"
+                        >
+                            Verify Signature
+                        </button>
+                    </div>
+                )}
+
+                {verificationResult && isSignedDoc && verificationResult.publicKey === signedPayload.signerPublicKey && (
+                    <div className={`p-3 rounded-lg border ${verificationResult.valid ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                        <div className="flex items-start gap-3">
+                            {verificationResult.valid ? (
+                                <BadgeCheck className="w-5 h-5 text-emerald-500 mt-0.5" />
+                            ) : (
+                                <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5" />
+                            )}
+                            <div>
+                                <h4 className={`text-sm font-semibold ${verificationResult.valid ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
+                                    {verificationResult.valid ? "Signature Valid" : "Signature Invalid"}
+                                </h4>
+                                {verificationResult.valid && (
+                                    <div className="text-xs text-emerald-600 dark:text-emerald-500 mt-1 space-y-1">
+                                        <p>Signed by: <span className="font-semibold">{verificationResult.signer ? verificationResult.signer.username : "Unknown User"}</span></p>
+                                        <p className="font-mono opacity-80 break-all">{verificationResult.publicKey}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border border-slate-200 dark:border-slate-800 font-mono text-sm whitespace-pre-wrap break-all text-slate-800 dark:text-slate-300">
+                    {innerDisplay}
+                </div>
+            </div>
+        );
     };
 
     const handleDecrypt = async (item, isShared = false) => {
@@ -853,102 +977,113 @@ export default function Dashboard() {
                     </div>
                 )}
 
-                {/* Create Form */}
+                {/* Create Secret Modal Content - Partial Replacement for the Create UI */}
                 {isCreating && (
-                    <div className="mb-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 animate-in fade-in slide-in-from-top-4">
-                        <form onSubmit={handleCreateSecret} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
-                                <input
-                                    type="text"
-                                    value={newSecretName}
-                                    onChange={(e) => setNewSecretName(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                    placeholder="e.g. WiFi Password"
-                                />
-                            </div>
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Content Type</label>
-                                <div className="flex gap-4 mb-2">
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
+                            <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Create New Secret</h3>
+                            <form onSubmit={handleCreateSecret} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
+                                    <input
+                                        type="text"
+                                        value={newSecretName}
+                                        onChange={(e) => setNewSecretName(e.target.value)}
+                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                        placeholder="My Secret Document"
+                                    />
+                                </div>
+
+                                {/* Toggle Content Type */}
+                                <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
                                     <button
                                         type="button"
                                         onClick={() => setContentType('text')}
-                                        className={`flex-1 py-2 rounded-lg text-sm border ${contentType === 'text' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-indigo-500'}`}
+                                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${contentType === 'text' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                                     >
-                                        <div className="flex items-center justify-center gap-2">
-                                            <FileText className="w-4 h-4" /> Text
-                                        </div>
+                                        Text
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setContentType('file')}
-                                        className={`flex-1 py-2 rounded-lg text-sm border ${contentType === 'file' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-indigo-500'}`}
+                                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${contentType === 'file' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                                     >
-                                        <div className="flex items-center justify-center gap-2">
-                                            <Upload className="w-4 h-4" /> File
-                                        </div>
+                                        File
                                     </button>
                                 </div>
 
                                 {contentType === 'text' ? (
-                                    <>
-                                        <label className="block text-sm font-medium text-slate-400 mb-1">Secret Content</label>
-                                        <textarea
-                                            value={newSecretContent}
-                                            onChange={(e) => setNewSecretContent(e.target.value)}
-                                            className="w-full h-32 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none font-mono text-sm"
-                                            placeholder="Enter sensitive data..."
-                                        />
-                                    </>
+                                    <textarea
+                                        value={newSecretContent}
+                                        onChange={(e) => setNewSecretContent(e.target.value)}
+                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none h-32 resize-none"
+                                        placeholder="Enter secret content..."
+                                    />
                                 ) : (
-                                    <div className="border border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-6 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950/50">
+                                    <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-lg p-6 text-center hover:border-indigo-500 transition-colors cursor-pointer relative">
                                         <input
                                             type="file"
-                                            id="file-upload"
-                                            className="hidden"
                                             onChange={(e) => setSelectedFile(e.target.files[0])}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                         />
-                                        <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                                            <Upload className="w-8 h-8 text-indigo-400 mb-2" />
-                                            <span className="text-sm text-slate-300 font-medium">Click to upload file</span>
-                                            <span className="text-xs text-slate-500 mt-1">{selectedFile ? selectedFile.name : "Any file type allowed"}</span>
-                                        </label>
+                                        <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                                        <p className="text-sm text-slate-500">
+                                            {selectedFile ? selectedFile.name : "Click to upload file"}
+                                        </p>
+                                        <p className="text-xs text-slate-400 mt-1">Max 5MB</p>
                                     </div>
                                 )}
-                            </div>
-                            <div className="flex justify-end gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsCreating(false)}
-                                    className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={uploadProgress > 0}
-                                    className="relative bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-all overflow-hidden disabled:cursor-not-allowed min-w-[140px]"
-                                >
-                                    {uploadProgress > 0 ? (
-                                        <>
+
+                                {authType === 'trustkeys' && (
+                                    <div className="flex items-center gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
+                                        <div
+                                            onClick={() => setIsSigned(!isSigned)}
+                                            className={`w-5 h-5 rounded border border-indigo-400 flex items-center justify-center cursor-pointer transition-colors ${isSigned ? 'bg-indigo-600 border-indigo-600' : 'bg-transparent'}`}
+                                        >
+                                            {isSigned && <Check className="w-3.5 h-3.5 text-white" />}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-indigo-900 dark:text-indigo-200 select-none cursor-pointer" onClick={() => setIsSigned(!isSigned)}>Sign Document</p>
+                                            <p className="text-xs text-indigo-600/70 dark:text-indigo-400/70">Digitally sign with your PQC Key</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {uploadProgress > 0 && (
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-xs text-slate-500">
+                                            <span>{statusMessage}</span>
+                                            <span>{uploadProgress}%</span>
+                                        </div>
+                                        <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                                             <div
-                                                className="absolute left-0 top-0 bottom-0 bg-emerald-500 transition-all duration-300"
+                                                className="h-full bg-indigo-600 transition-all duration-300"
                                                 style={{ width: `${uploadProgress}%` }}
                                             />
-                                            <span className="relative z-10 flex items-center justify-center gap-2">
-                                                {uploadProgress < 100 && <RefreshCw className="w-4 h-4 animate-spin" />}
-                                                {statusMessage}
-                                            </span>
-                                        </>
-                                    ) : (
-                                        "Encrypt & Save"
-                                    )}
-                                </button>
-                            </div>
-                        </form>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="flex justify-end gap-3 pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsCreating(false)}
+                                        className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={uploadProgress > 0}
+                                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
+                                    >
+                                        {uploadProgress > 0 ? 'Processing...' : (isSigned ? 'Sign & Save' : 'Save Secret')}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                )
-                }
+                )}
 
                 {
                     loading ? (
@@ -961,35 +1096,52 @@ export default function Dashboard() {
                         </div>
                     ) : (
                         <div className="grid gap-4">
-                            {secrets.map(secret => (
-                                <div key={secret.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col sm:flex-row items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all gap-4 sm:gap-0">
+                            {secrets.map(s => (
+                                <div key={s.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col sm:flex-row items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all gap-4 sm:gap-0">
                                     <div className="flex-1 w-full">
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                                                <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h3 className="font-semibold text-slate-900 dark:text-white">{s.name}</h3>
+                                                    {s.type === 'signed_document' && (
+                                                        <span className="text-[10px] uppercase font-bold text-indigo-500 bg-indigo-100 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded">Signed</span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-slate-500">Created: {new Date(s.created_at).toLocaleDateString()}</p>
                                             </div>
-                                            <h3 className="font-medium text-slate-900 dark:text-white truncate">{secret.name}</h3>
-                                            <span className="text-xs text-slate-500 shrink-0">
-                                                {new Date(secret.created_at).toLocaleDateString()}
-                                            </span>
+                                            <button onClick={() => handleDeleteSecret(s.id)} className="text-slate-400 hover:text-red-500 transition-colors p-1">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
                                         </div>
 
-                                        {decryptedSecrets[secret.id] ? (
-                                            <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-200 font-mono text-sm break-all">
-                                                {renderDecryptedContent(decryptedSecrets[secret.id])}
+                                        {decryptedSecrets[s.id] ? (
+                                            <div className="mt-3 relative group">
+                                                {renderDecryptedContent(decryptedSecrets[s.id], s)}
+                                                <div className="flex justify-end gap-2 mt-3 opacity-10 transition-opacity group-hover:opacity-100">
+                                                    <button onClick={() => handleOpenShareModal(s)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg">
+                                                        <Share2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button onClick={() => handleOpenEditModal(s)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg">
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             </div>
                                         ) : (
-                                            <div className="mt-3 text-sm text-slate-500 italic flex items-center gap-2">
-                                                <Lock className="w-3 h-3" />
-                                                Encrypted Content
+                                            <div className="mt-auto pt-6 flex justify-center">
+                                                <button
+                                                    onClick={() => handleDecrypt(s)}
+                                                    className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                                                >
+                                                    <Unlock className="w-4 h-4" /> Decrypt
+                                                </button>
                                             </div>
                                         )}
                                     </div>
 
-                                    <div className="flex items-center gap-2 ml-0 sm:ml-4 w-full sm:w-auto justify-end border-t sm:border-t-0 border-slate-100 dark:border-slate-800 pt-3 sm:pt-0 mt-2 sm:mt-0">
-                                        {!decryptedSecrets[secret.id] && (
+                                    <div className="flex items-center gap-2 ml-0 sm:ml-4 w-full sm:w-auto justify-end border-t sm:border-t-0 border-slate-100 dark:border-800 pt-3 sm:pt-0 mt-2 sm:mt-0">
+                                        {!decryptedSecrets[s.id] && (
                                             <button
-                                                onClick={() => handleDecrypt(secret)}
+                                                onClick={() => handleDecrypt(s)}
                                                 className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
                                                 title="Decrypt"
                                             >
@@ -997,7 +1149,7 @@ export default function Dashboard() {
                                             </button>
                                         )}
                                         <button
-                                            onClick={() => handleOpenShareModal(secret)}
+                                            onClick={() => handleOpenShareModal(s)}
                                             className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
                                             title="Manage Access & Share"
                                         >
