@@ -46,100 +46,119 @@ A secure secret management and document signing application featuring **Quantum-
 - **MPC Recovery** - Google-authenticated key reconstruction.
 
 ## Getting Started
-
-### Prerequisites
-- **Python 3.11+**
-- **Node.js 22.13.1**
-- **TrustKeys Extension** (Included in repo) for PQC features.
-- MetaMask (Optional, for standard features).
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/safelog.git
-   cd safelog
-   ```
-
-2. **Setup Backend**
-   ```bash
-   cd backend
-   # Establish environment
-   cp .env.example .env
-   
-   # Install Python Dependencies
-   pip3 install -r requirements.txt
-   
-   # Install Node.js Dependencies (Crucial for PQC Verification)
-   npm install
-   
-   # Initialize DB
-   python3 create_database.py
-   ```
-   **Configuration (`.env`):**
-   - `SAFELOG_SECRET_KEY`: **REQUIRED**. Set a strong random string for JWT signing.
-     ```bash
-     export SAFELOG_SECRET_KEY="your-secure-random-key"
-     ```
-   - `ALLOWED_ORIGINS`: (Optional) Comma-separated list of allowed CORS origins.
-   - `GOOGLE_CLIENT_ID`: Required for secure MPC recovery (matches Extension ID).
-
-3. **Setup Frontend**
-   ```bash
-   cd frontend
-   cp .env.example .env
-   npm install
-   ```
-
-4. **Install TrustKeys Extension**
-   - Navigate to `safelog/trustkeys`.
-   - Run `npm install` and `npm run build`.
-   - Open Chrome/Brave to `chrome://extensions`.
-   - Enable "Developer Mode".
-   - Click "Load Unpacked" and select `safelog/trustkeys/dist`.
-   - **Important**: If you update the code, you must reload the extension here and refresh the app page.
-
-5. **Run Application**
-   Safelog requires **3 separate processes** to run locally.
-
-   **Terminal 1: Backend (FastAPI)**
-   ```bash
-   cd backend
-   # Helper script handles reload exclusions for SQLite
-   ./run_dev.sh
-   ```
-
-   **Terminal 2: PQC Microservice (Node.js)**
-   *Required for TrustKeys Login*
-   ```bash
-   cd backend
-   # Ensure correct Node version
-   nvm use
-   node pqc_service.js
-   ```
-
-   **Terminal 3: Frontend (Vite)**
-   ```bash
-   cd frontend
-   npm run dev
-   ```
-   Access the app at `http://localhost:5173`.
-
-## 🚀 Production Configuration
-
-### Nginx Setup (PQC Large Headers)
-Post-Quantum Cryptography signatures (Dilithium2) are significantly larger than standard ECDSA signatures. This increases the JWT size to ~3KB.
-**You must increase the buffer size in your Nginx configuration** to avoid `400 Bad Request` or `431 Request Header Fields Too Large`.
-
-Edit your Nginx config (`/etc/nginx/nginx.conf` or site config):
-```nginx
-http {
-    # ...
-    client_header_buffer_size 4k;
-    large_client_header_buffers 4 16k;
-    # ...
-}
-```
+ 
+ ### Prerequisites
+ - **Python 3.11+**
+ - **Node.js 22.13.1**
+ - **TrustKeys Extension** (Included in repo) for PQC features.
+ - MetaMask (Optional, for standard features).
+ 
+ ### Installation & Setup
+ 
+ 1. **Clone the repository**
+    ```bash
+    git clone https://github.com/yourusername/safelog.git
+    cd safelog
+    ```
+ 
+ 2. **Setup Backend**
+    The backend consists of a Python FastAPI server and a Node.js microservice for PQC operations.
+ 
+    ```bash
+    cd backend
+    
+    # 1. Environment Setup
+    cp .env.example .env
+    # CRITICAL: Edit .env and set a random SAFELOG_SECRET_KEY
+    # The application will fail to start if this key is missing.
+    
+    # 2. Install Python Dependencies
+    pip3 install -r requirements.txt
+    
+    # 3. Install Node.js Dependencies (for PQC Service)
+    npm install
+    
+    # 4. Initialize Database
+    python3 create_database.py
+    ```
+ 
+ 3. **Setup Frontend**
+    ```bash
+    cd frontend
+    cp .env.example .env
+    npm install
+    ```
+ 
+ 4. **Install TrustKeys Extension**
+    - Navigate to `safelog/trustkeys`.
+    - Install dependencies and build:
+      ```bash
+      cd trustkeys
+      npm install
+      npm run build
+      ```
+    - Open Chrome/Brave to `chrome://extensions`.
+    - Enable **Developer Mode** (toggle in top right).
+    - Click **Load Unpacked** and select the `safelog/trustkeys/dist` folder.
+    - Note the Extension ID (you might need it for specific configurations), but generally, it works out of the box for local dev.
+ 
+ ---
+ 
+ ## 🏃‍♂️ Running the Application
+ 
+ Safelog requires **3 separate terminal processes** to run locally.
+ 
+ ### Terminal 1: PQC Microservice
+ *This service handles the heavy lifting for Post-Quantum Cryptography (Dilithium/Kyber).*
+ 
+ ```bash
+ cd backend
+ # Ensure the .env file has SAFELOG_SECRET_KEY set!
+ node pqc_service.js
+ ```
+ *Expected Output:* `[PQC Service] Ready on http://127.0.0.1:3002`
+ 
+ ### Terminal 2: Backend API
+ *The main FastAPI server.*
+ 
+ ```bash
+ cd backend
+ ./run_dev.sh
+ ```
+ *Expected Output:* `Uvicorn running on http://127.0.0.1:8000`
+ 
+ ### Terminal 3: Frontend
+ *The React application.*
+ 
+ ```bash
+ cd frontend
+ npm run dev
+ ```
+ *Expected Output:* `Local: http://localhost:5173/`
+ 
+ ---
+ 
+ ## 🛠️ Configuration & Security Notes
+ 
+ ### Environment Variables
+ - **backend/.env**:
+   - `SAFELOG_SECRET_KEY`: **Mandatory**. Used to deterministically generate server PQC keys.
+   - `ALLOWED_ORIGINS`: CORS settings (default includes localhost).
+   - `GOOGLE_CLIENT_ID`: (Disabled) Previously used for MPC Recovery.
+ 
+ ### Disabled Features
+ - **Google MPC Recovery**: The "Restore from Google" functionality is currently **disabled** in the code to prevent security risks associated with unstable Extension IDs in development mode.
+ 
+ ### Nginx / Production Notes
+ Post-Quantum Cryptography signatures (Dilithium2) are significantly larger (~2-3KB) than standard signatures.
+ **You must increase the buffer size in your Nginx configuration** to avoid `431 Request Header Fields Too Large` errors when passing JWTs.
+ 
+ ```nginx
+ http {
+     client_header_buffer_size 4k;
+     large_client_header_buffers 4 16k;
+ }
+ ```
 
 ## License
 

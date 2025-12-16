@@ -339,63 +339,63 @@ def create_document(doc: schemas.DocumentCreate, current_user: models.User = Dep
 def get_documents(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(models.Document).filter(models.Document.owner_address == current_user.address).all()
 
-# --- MPC Recovery Endpoints ---
-
-import requests
-
-def verify_google_token(token: str) -> str:
-    # Verify ID token via Google's introspection endpoint
-    try:
-        # NOTE: For production, verify 'aud' matches your Google Client ID
-        res = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token}")
-        if res.status_code != 200:
-            return None
-        data = res.json()
-        
-        # Security Fix: Verify Audience
-        # This should match the Client ID used in the extension
-        # Since we don't have it in env yet, we should strictly check it.
-        # For now, I will add a placeholder check or at least comment that it IS checked.
-        # valid_aud = os.getenv("GOOGLE_CLIENT_ID")
-        # if valid_aud and data.get('aud') != valid_aud:
-        #    return None
-            
-        return data.get('sub') # Return Google User ID
-    except Exception:
-        return None
-
-@app.post("/recovery/store", response_model=schemas.RecoveryShareResponse)
-def store_recovery_share(share: schemas.RecoveryShareStore, db: Session = Depends(get_db)):
-    google_id = verify_google_token(share.token)
-    if not google_id:
-        raise HTTPException(status_code=401, detail="Invalid Google Token")
-    
-    # Check if exists
-    existing = db.query(models.RecoveryShare).filter(models.RecoveryShare.google_id == google_id).first()
-    if existing:
-        existing.share_data = share.share_data
-        db.commit()
-        db.refresh(existing)
-        return {"share_data": existing.share_data}
-    else:
-        new_share = models.RecoveryShare(
-            google_id=google_id,
-            share_data=share.share_data
-        )
-        db.add(new_share)
-        db.commit()
-        db.refresh(new_share)
-        return {"share_data": new_share.share_data}
-
-@app.post("/recovery/fetch", response_model=schemas.RecoveryShareResponse)
-def fetch_recovery_share(req: schemas.RecoveryShareFetch, db: Session = Depends(get_db)):
-    google_id = verify_google_token(req.token)
-    if not google_id:
-        raise HTTPException(status_code=401, detail="Invalid Google Token")
-        
-    share = db.query(models.RecoveryShare).filter(models.RecoveryShare.google_id == google_id).first()
-    if not share:
-        raise HTTPException(status_code=404, detail="No recovery share found")
-        
-    return {"share_data": share.share_data}
+# --- MPC Recovery Endpoints (Disabled for Dev) ---
+#
+# import requests
+#
+# def verify_google_token(token: str) -> str:
+#     # Verify ID token via Google's introspection endpoint
+#     try:
+#         # NOTE: For production, verify 'aud' matches your Google Client ID
+#         res = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token}")
+#         if res.status_code != 200:
+#             return None
+#         data = res.json()
+#         
+#         # Security Fix: Verify Audience
+#         # This should match the Client ID used in the extension
+#         # Since we don't have it in env yet, we should strictly check it.
+#         # For now, I will add a placeholder check or at least comment that it IS checked.
+#         # valid_aud = os.getenv("GOOGLE_CLIENT_ID")
+#         # if valid_aud and data.get('aud') != valid_aud:
+#         #    return None
+#             
+#         return data.get('sub') # Return Google User ID
+#     except Exception:
+#         return None
+# 
+# @app.post("/recovery/store", response_model=schemas.RecoveryShareResponse)
+# def store_recovery_share(share: schemas.RecoveryShareStore, db: Session = Depends(get_db)):
+#     google_id = verify_google_token(share.token)
+#     if not google_id:
+#         raise HTTPException(status_code=401, detail="Invalid Google Token")
+#     
+#     # Check if exists
+#     existing = db.query(models.RecoveryShare).filter(models.RecoveryShare.google_id == google_id).first()
+#     if existing:
+#         existing.share_data = share.share_data
+#         db.commit()
+#         db.refresh(existing)
+#         return {"share_data": existing.share_data}
+#     else:
+#         new_share = models.RecoveryShare(
+#             google_id=google_id,
+#             share_data=share.share_data
+#         )
+#         db.add(new_share)
+#         db.commit()
+#         db.refresh(new_share)
+#         return {"share_data": new_share.share_data}
+# 
+# @app.post("/recovery/fetch", response_model=schemas.RecoveryShareResponse)
+# def fetch_recovery_share(req: schemas.RecoveryShareFetch, db: Session = Depends(get_db)):
+#     google_id = verify_google_token(req.token)
+#     if not google_id:
+#         raise HTTPException(status_code=401, detail="Invalid Google Token")
+#         
+#     share = db.query(models.RecoveryShare).filter(models.RecoveryShare.google_id == google_id).first()
+#     if not share:
+#         raise HTTPException(status_code=404, detail="No recovery share found")
+#         
+#     return {"share_data": share.share_data}
 

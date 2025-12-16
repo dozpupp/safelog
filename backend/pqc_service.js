@@ -18,8 +18,8 @@ const fromHex = (hex) => new Uint8Array(Buffer.from(hex, 'hex'));
 const generateKeysFromSecret = (mod) => {
     let secret = process.env.SAFELOG_SECRET_KEY;
     if (!secret) {
-        console.warn("[PQC Service] WARNING: SAFELOG_SECRET_KEY not set. Using insecure default.");
-        secret = "dev_secret_key_change_me"; // Fallback for dev
+        console.error("[PQC Service] CRITICAL ERROR: SAFELOG_SECRET_KEY not set.");
+        process.exit(1);
     }
 
     // Hash secret to get 32-byte seed
