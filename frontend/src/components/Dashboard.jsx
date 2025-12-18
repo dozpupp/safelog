@@ -1116,9 +1116,6 @@ export default function Dashboard() {
                                                 </div>
                                                 <p className="text-xs text-slate-500">Created: {new Date(s.created_at).toLocaleDateString()}</p>
                                             </div>
-                                            <button onClick={() => handleDeleteSecret(s.id)} className="text-slate-400 hover:text-red-500 transition-colors p-1">
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
                                         </div>
 
                                         {decryptedSecrets[s.id] ? (
@@ -1163,14 +1160,14 @@ export default function Dashboard() {
                                             <User className="w-4 h-4" />
                                         </button>
                                         <button
-                                            onClick={() => handleOpenEditModal(secret)}
+                                            onClick={() => handleOpenEditModal(s)}
                                             className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
                                             title="Edit"
                                         >
                                             <Edit2 className="w-4 h-4" />
                                         </button>
                                         <button
-                                            onClick={() => handleDeleteSecret(secret.id)}
+                                            onClick={() => handleDeleteSecret(s.id)}
                                             className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
                                             title="Delete"
                                         >
@@ -1187,74 +1184,76 @@ export default function Dashboard() {
                     <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Shared with You</h2>
                 </div>
 
-                {loading ? (
-                    <div className="flex justify-center py-12">
-                        <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
-                    </div>
-                ) : sharedSecrets.length === 0 ? (
-                    <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
-                        <p className="text-slate-500">No secrets shared with you yet.</p>
-                    </div>
-                ) : (
-                    <div className="grid gap-4">
-                        {sharedSecrets.map(grant => (
-                            <div
-                                key={`shared-${grant.id}`}
-                                style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
-                                className="border rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all"
-                            >
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-2">
-                                        <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                                            <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                {
+                    loading ? (
+                        <div className="flex justify-center py-12">
+                            <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
+                        </div>
+                    ) : sharedSecrets.length === 0 ? (
+                        <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
+                            <p className="text-slate-500">No secrets shared with you yet.</p>
+                        </div>
+                    ) : (
+                        <div className="grid gap-4">
+                            {sharedSecrets.map(grant => (
+                                <div
+                                    key={`shared-${grant.id}`}
+                                    style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
+                                    className="border rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all"
+                                >
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                                <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                            </div>
+                                            <h3 className="font-medium text-slate-900 dark:text-white">{grant.secret?.name || 'Unknown Secret'}</h3>
+                                            <span className="text-xs text-slate-500">
+                                                {new Date(grant.created_at).toLocaleDateString()}
+                                            </span>
+                                            <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-xs rounded-full">
+                                                Shared by {grant.secret?.owner?.username || grant.secret?.owner?.address?.slice(0, 6) + '...'}
+                                            </span>
                                         </div>
-                                        <h3 className="font-medium text-slate-900 dark:text-white">{grant.secret?.name || 'Unknown Secret'}</h3>
-                                        <span className="text-xs text-slate-500">
-                                            {new Date(grant.created_at).toLocaleDateString()}
-                                        </span>
-                                        <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-xs rounded-full">
-                                            Shared by {grant.secret?.owner?.username || grant.secret?.owner?.address?.slice(0, 6) + '...'}
-                                        </span>
+
+                                        {decryptedSecrets[`shared_${grant.id}`] ? (
+                                            <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-200 font-mono text-sm break-all">
+                                                {renderDecryptedContent(decryptedSecrets[`shared_${grant.id}`])}
+                                            </div>
+                                        ) : (
+                                            <div className="mt-3 text-sm text-slate-500 italic flex items-center gap-2">
+                                                <Lock className="w-3 h-3" />
+                                                Encrypted Content
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {decryptedSecrets[`shared_${grant.id}`] ? (
-                                        <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-200 font-mono text-sm break-all">
-                                            {renderDecryptedContent(decryptedSecrets[`shared_${grant.id}`])}
-                                        </div>
-                                    ) : (
-                                        <div className="mt-3 text-sm text-slate-500 italic flex items-center gap-2">
-                                            <Lock className="w-3 h-3" />
-                                            Encrypted Content
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center gap-2 ml-4">
-                                    {!decryptedSecrets[`shared_${grant.id}`] && (
+                                    <div className="flex items-center gap-2 ml-4">
+                                        {!decryptedSecrets[`shared_${grant.id}`] && (
+                                            <button
+                                                onClick={() => handleDecrypt(grant, true)}
+                                                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                                title="Decrypt"
+                                            >
+                                                <Unlock className="w-4 h-4" />
+                                            </button>
+                                        )}
                                         <button
-                                            onClick={() => handleDecrypt(grant, true)}
-                                            className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                            title="Decrypt"
+                                            onClick={() => handleRevokeGrant(grant.id)}
+                                            className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
+                                            title="Remove"
                                         >
-                                            <Unlock className="w-4 h-4" />
+                                            <Trash2 className="w-4 h-4" />
                                         </button>
-                                    )}
-                                    <button
-                                        onClick={() => handleRevokeGrant(grant.id)}
-                                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
-                                        title="Remove"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </main>
+                            ))}
+                        </div>
+                    )
+                }
+            </main >
             {showVaultManager && (
                 <VaultManager onClose={() => setShowVaultManager(false)} />
             )}
-        </div>
+        </div >
     );
 }
