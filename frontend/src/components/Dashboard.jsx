@@ -642,7 +642,10 @@ export default function Dashboard() {
                     </div>
                 )}
 
-                <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border border-slate-200 dark:border-slate-800 font-mono text-sm whitespace-pre-wrap break-all text-slate-800 dark:text-slate-300">
+                <div
+                    style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#f8fafc', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', color: theme === 'dark' ? '#cbd5e1' : '#1e293b' }}
+                    className="p-4 rounded-lg border font-mono text-sm whitespace-pre-wrap break-all"
+                >
                     {innerDisplay}
                 </div>
             </div>
@@ -1097,7 +1100,11 @@ export default function Dashboard() {
                     ) : (
                         <div className="grid gap-4">
                             {secrets.map(s => (
-                                <div key={s.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col sm:flex-row items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all gap-4 sm:gap-0">
+                                <div
+                                    key={s.id}
+                                    style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
+                                    className="border rounded-xl p-5 flex flex-col sm:flex-row items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all gap-4 sm:gap-0"
+                                >
                                     <div className="flex-1 w-full">
                                         <div className="flex justify-between items-start mb-4">
                                             <div>
@@ -1138,7 +1145,7 @@ export default function Dashboard() {
                                         )}
                                     </div>
 
-                                    <div className="flex items-center gap-2 ml-0 sm:ml-4 w-full sm:w-auto justify-end border-t sm:border-t-0 border-slate-100 dark:border-800 pt-3 sm:pt-0 mt-2 sm:mt-0">
+                                    <div className="flex items-center gap-2 ml-0 sm:ml-4 w-full sm:w-auto justify-end border-t sm:border-t-0 border-slate-100 dark:border-slate-800 pt-3 sm:pt-0 mt-2 sm:mt-0">
                                         {!decryptedSecrets[s.id] && (
                                             <button
                                                 onClick={() => handleDecrypt(s)}
@@ -1191,7 +1198,11 @@ export default function Dashboard() {
                 ) : (
                     <div className="grid gap-4">
                         {sharedSecrets.map(grant => (
-                            <div key={`shared-${grant.id}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all">
+                            <div
+                                key={`shared-${grant.id}`}
+                                style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
+                                className="border rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all"
+                            >
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-2">
                                         <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
