@@ -343,46 +343,39 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                         <h4 className="text-sm font-medium text-slate-500 mb-3 uppercase tracking-wider">Signers</h4>
                         <div className="space-y-2">
                             {workflow.signers.map(s => (
-                                    <div key={s.user_address} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-2 h-2 rounded-full ${s.has_signed ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                                            <div>
-                                                <div className="font-medium text-slate-900 dark:text-slate-200 flex items-center gap-2">
-                                                    {s.user?.username || s.user_address.substring(0, 12)}
-                                                    {s.user_address === user.address && <span className="text-xs bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500">You</span>}
-                                                </div>
-                                                {s.has_signed && (
-                                                    <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                                                        <span className="flex items-center gap-1">
-                                                            <Check className="w-3 h-3" /> Signed
-                                                        </span>
-                                                        <span className="text-slate-400">•</span>
-                                                        <span>{new Date(s.signed_at).toLocaleDateString()}</span>
-                                                    </div>
-                                                )}
+                                <div key={s.user_address} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-2 h-2 rounded-full ${s.has_signed ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                        <div>
+                                            <div className="font-medium text-slate-900 dark:text-slate-200 flex items-center gap-2">
+                                                {s.user?.username || s.user_address.substring(0, 12)}
+                                                {s.user_address === user.address && <span className="text-xs bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500">You</span>}
                                             </div>
-                                        </div>
-                                        {/* Verification Badge */}
-                                        {s.has_signed && decryptedContent && (
-                                            <SignerVerificationBadge 
-                                                signer={s} 
-                                                contentToVerify={rawDecryptedContent} 
-                                            />
-                                        )}
-                                    </div>
-                                                    <Clock className="w-3 h-3" /> { new Date(s.signed_at).toLocaleString() }
+                                            {s.has_signed && (
+                                                <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                                                    <span className="flex items-center gap-1">
+                                                        <Check className="w-3 h-3" /> Signed
+                                                    </span>
+                                                    <span className="text-slate-400">•</span>
+                                                    <span>{new Date(s.signed_at).toLocaleDateString()}</span>
                                                 </div>
                                             )}
-                    </div>
-                </div>
-                {s.has_signed && <Check className="w-4 h-4 text-emerald-500" />}
-            </div>
+                                        </div>
+                                    </div>
+                                    {/* Verification Badge */}
+                                    {s.has_signed && decryptedContent && (
+                                        <SignerVerificationBadge
+                                            signer={s}
+                                            contentToVerify={rawDecryptedContent}
+                                        />
+                                    )}
+                                </div>
                             ))}
-        </div>
-                    </div >
+                        </div>
+                    </div>
 
-        {/* Recipients List */ }
-        < div >
+                    {/* Recipients List */}
+                    < div >
                         <h4 className="text-sm font-medium text-slate-500 mb-3 uppercase tracking-wider">Recipients</h4>
                         <div className="space-y-2">
                             {workflow.recipients.map(r => (
@@ -403,44 +396,44 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                         </div>
                     </div >
 
-        {/* View/Decrypt Section */ }
-    {
-        canView && !decryptedContent && (
-            <button
-                onClick={fetchAndDecrypt}
-                className="w-full border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 py-2 rounded-lg flex items-center justify-center gap-2"
-            >
-                <Eye className="w-4 h-4" /> View Secret Content
-            </button>
-        )
-    }
+                    {/* View/Decrypt Section */}
+                    {
+                        canView && !decryptedContent && (
+                            <button
+                                onClick={fetchAndDecrypt}
+                                className="w-full border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 py-2 rounded-lg flex items-center justify-center gap-2"
+                            >
+                                <Eye className="w-4 h-4" /> View Secret Content
+                            </button>
+                        )
+                    }
 
-    { decryptedContent && renderContent() }
+                    {decryptedContent && renderContent()}
 
-    {/* Actions */ }
-    {
-        error && (
-            <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" /> {error}
-            </div>
-        )
-    }
+                    {/* Actions */}
+                    {
+                        error && (
+                            <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4" /> {error}
+                            </div>
+                        )
+                    }
 
-    {
-        isSigner && !hasSigned && workflow.status !== 'completed' && (
-            <button
-                onClick={handleSign}
-                disabled={isSigning}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-                {isSigning ? 'Signing...' : (
-                    <>
-                        <Shield className="w-4 h-4" /> Sign Workflow
-                    </>
-                )}
-            </button>
-        )
-    }
+                    {
+                        isSigner && !hasSigned && workflow.status !== 'completed' && (
+                            <button
+                                onClick={handleSign}
+                                disabled={isSigning}
+                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                {isSigning ? 'Signing...' : (
+                                    <>
+                                        <Shield className="w-4 h-4" /> Sign Workflow
+                                    </>
+                                )}
+                            </button>
+                        )
+                    }
                 </div >
             </div >
         </div >
