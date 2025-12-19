@@ -41,6 +41,15 @@ export const PQCProvider = ({ children }) => {
         return () => clearTimeout(t);
     }, []);
 
+    // FIX: Clear state if authType changes away from trustkeys (Logout or Switch)
+    const { authType } = useAuth();
+    useEffect(() => {
+        if (authType !== 'trustkeys') {
+            setPqcAccount(null);
+            setKyberKey(null);
+        }
+    }, [authType]);
+
     // Internal helper to request password via Modal
     const requestPassword = (message = "Please enter your vault password to continue.") => {
         return new Promise((resolve, reject) => {

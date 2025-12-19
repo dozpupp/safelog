@@ -2,6 +2,7 @@ import KyberPkg from 'crystals-kyber';
 import { createDilithium } from 'dilithium-crystals-js';
 import { Buffer } from 'buffer';
 import { encrypt } from '@metamask/eth-sig-util';
+import { verifyMessage, BrowserProvider } from 'ethers';
 
 const { KeyGen768, Encrypt768, Decrypt768 } = KyberPkg;
 
@@ -436,3 +437,25 @@ export const signMessage = async (message, address) => {
     });
     return signature;
 }
+
+// Safe Ethers-based signing (matches verifyMessage)
+export const signMessageEth = async (message) => {
+    try {
+        const provider = new BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        // Ethers handles hex/string conversion automatically matching verifyMessage
+        return await signer.signMessage(message);
+    } catch (e) {
+        console.error("signMessageEth failed", e);
+        throw e;
+    }
+};
+
+export const verifyMessageEth = (message, signature) => {
+    try {
+        return verifyMessage(message, signature);
+    } catch (e) {
+        console.error("Eth signature verification failed", e);
+        return null;
+    }
+};

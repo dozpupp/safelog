@@ -3,7 +3,7 @@ import { X, Search, Plus, Trash2, Check, Lock, Users, FileText, ArrowRight, Arro
 import { useAuth } from '../context/AuthContext';
 import { usePQC } from '../context/PQCContext';
 import { useWeb3 } from '../context/Web3Context';
-import { encryptData, getEncryptionPublicKey } from '../utils/crypto';
+import { encryptData, getEncryptionPublicKey, signMessageEth } from '../utils/crypto';
 import API_ENDPOINTS from '../config';
 
 export default function MultisigCreateModal({ isOpen, onClose, onCreated }) {
@@ -131,7 +131,7 @@ export default function MultisigCreateModal({ isOpen, onClose, onCreated }) {
             let payloadToEncrypt = rawContent;
             let secretType = 'standard';
 
-            if (pqcAccount) { // Assuming PQC active
+            if (authType === 'trustkeys' && pqcAccount) {
                 const signature = await signPQC(rawContent);
                 payloadToEncrypt = JSON.stringify({
                     content: rawContent,
@@ -139,8 +139,17 @@ export default function MultisigCreateModal({ isOpen, onClose, onCreated }) {
                     signerPublicKey: pqcAccount
                 });
                 secretType = 'signed_document';
+            } else if ((authType === 'metamask' || !authType) && currentAccount) {
+                // MetaMask / Standard Signing
+                const signature = await signMessageEth(rawContent);
+                payloadToEncrypt = JSON.stringify({
+                    content: rawContent,
+                    signature: signature,
+                    signerPublicKey: currentAccount // Using Address as key
+                });
+                secretType = 'signed_document';
             } else {
-                throw new Error("You must be logged in with TrustKeys (PQC) to create a multisig workflow.");
+                throw new Error("You must be logged in to create a multisig workflow.");
             }
 
             // 1. Encrypt Content for Creator (Self)

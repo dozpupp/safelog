@@ -503,24 +503,7 @@ def sign_multisig_workflow(workflow_id: int, sig_req: schemas.MultisigSignatureR
     
     if all_signed:
         wf.status = "completed"
-        
-        # Release to Recipients
-        all_recipients = db.query(models.MultisigWorkflowRecipient).filter(models.MultisigWorkflowRecipient.workflow_id == wf.id).all()
-        for r in all_recipients:
-            # Grant Access
-            # Check if grant already exists?
-            existing = db.query(models.AccessGrant).filter(
-                models.AccessGrant.secret_id == wf.secret_id,
-                models.AccessGrant.grantee_address == r.user_address
-            ).first()
-            if not existing:
-                grant = models.AccessGrant(
-                    secret_id=wf.secret_id,
-                    grantee_address=r.user_address,
-                    encrypted_key=r.encrypted_key
-                )
-                db.add(grant)
-        
+        # Release handled above via Recipient Key updates in table
         db.commit()
     
     db.refresh(wf)

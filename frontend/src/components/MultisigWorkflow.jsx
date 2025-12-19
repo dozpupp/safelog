@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePQC } from '../context/PQCContext';
 import { useWeb3 } from '../context/Web3Context';
 import API_ENDPOINTS from '../config';
-import { decryptData, verifySignaturePQC, encryptData } from '../utils/crypto';
+import { decryptData, verifySignaturePQC, encryptData, verifyMessageEth } from '../utils/crypto';
 
 const SignerVerificationBadge = ({ signer, contentToVerify }) => {
     const [status, setStatus] = useState('idle'); // idle, verifying, valid, invalid
@@ -21,7 +21,15 @@ const SignerVerificationBadge = ({ signer, contentToVerify }) => {
             // Reconstruct Signed Message (Sig + Content) or detached? 
             // In handleSign, we sent detached prefix/suffix.
             // verifySignaturePQC handles detached.
-            const isValid = await verifySignaturePQC(contentToVerify, signer.signature, signer.user_address);
+            // verifySignaturePQC handles detached.
+            let isValid = false;
+            if (signer.user_address && signer.user_address.length > 200) { // PQC address is public key
+                isValid = await verifySignaturePQC(contentToVerify, signer.signature, signer.user_address);
+            } else {
+                // Eth address is short. User Address is the Public Key (Address).
+                const recovered = verifyMessageEth(contentToVerify, signer.signature);
+                isValid = recovered && recovered.toLowerCase() === signer.user_address.toLowerCase();
+            }
             setStatus(isValid ? 'valid' : 'invalid');
         } catch (e) {
             console.error(e);
@@ -185,7 +193,15 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
 
                 if (parsed && parsed.signature && parsed.signerPublicKey) {
                     // It is a Signed Document (Creator's)
-                    const isValid = await verifySignaturePQC(parsed.content, parsed.signature, parsed.signerPublicKey);
+                    // It is a Signed Document (Creator's)
+                    let isValid = false;
+                    if (parsed.signerPublicKey && parsed.signerPublicKey.length > 200) {
+                        isValid = await verifySignaturePQC(parsed.content, parsed.signature, parsed.signerPublicKey);
+                    } else if (parsed.signerPublicKey) {
+                        // Ethereum Verification
+                        const recovered = verifyMessageEth(parsed.content, parsed.signature);
+                        isValid = recovered && recovered.toLowerCase() === parsed.signerPublicKey.toLowerCase();
+                    }
                     setVerificationStatus(isValid ? 'verified' : 'failed');
 
                     // Capture Creator Signature info for the list
@@ -278,6 +294,7 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
             if (!encryptedKey) throw new Error("Access denied: No key found for signing");
 
             let contentToSign;
+            let signature;
             if (authType === 'trustkeys') {
                 const decryptedJson = await decryptPQC(JSON.parse(encryptedKey));
                 // Canonicalize: Parse and Re-Stringify to remove artifacts/formatting diffs
@@ -289,11 +306,22 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                 }
                 console.log("handleSign: Decrypted Content Length (Original)", decryptedJson.length);
                 console.log("handleSign: Content to Sign Length (Canonical)", contentToSign.length);
+
+                signature = await signPQC(contentToSign);
             } else {
                 contentToSign = await decryptData(encryptedKey, currentAccount);
+                // MetaMask Signing
+                // Import signMessage at top or use from crypto? 
+                // We didn't import signMessage (or signMessageMetaMask) in this file yet.
+                // We need to import it.
+                // But wait, useWeb3 context might have it? No, context has verify/login logic.
+                // Crypto.js has signMessage.
+                // I need to update imports first if missing.
+                // Assuming I will add the import or have it.
+                // Let's use window.ethereum directly? No, use helper.
+                const { signMessageEth } = await import('../utils/crypto');
+                signature = await signMessageEth(contentToSign);
             }
-
-            let signature = await signPQC(contentToSign);
 
             // Handle "Signed Message" (Attached Code) vs "Detached Signature"
             // We now support Attached Signatures (Full Blob) in backend (Text column).
