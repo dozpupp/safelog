@@ -191,9 +191,28 @@ export const verifySignaturePQC = async (message, signatureHex, publicKeyHex) =>
     const publicKey = fromHex(publicKeyHex);
     const msgBytes = new TextEncoder().encode(message);
 
-    // Correct signature: verify(signature, message, publicKey, kind)
-    // Returns object { result, ... } where result 0 is success
-    const resultObj = mod.verify(signature, msgBytes, publicKey, 2);
+    // Mod.verify expects the FULL Signed Message (SM = Signature + Message).
+    // If we have a detached signature, we must reconstruct SM.
+    const sigLen = signature.length;
+    const msgLen = msgBytes.length;
+
+    // Dilithium2 Sig Size = 2420 bytes
+    // If signature provided is just the signature (2420), we concat.
+    // If it's already large (>= msgLen + 2420), we use it as is?
+
+    let sm;
+    if (sigLen === 2420) {
+        sm = new Uint8Array(sigLen + msgLen);
+        sm.set(signature, 0);
+        sm.set(msgBytes, sigLen);
+    } else {
+        // Assume it passed SM? Or error?
+        // Let's rely on detached signature logic primarily.
+        sm = signature;
+    }
+
+    // Correct signature: verify(sm, message, publicKey, kind)
+    const resultObj = mod.verify(sm, msgBytes, publicKey, 2);
 
     return resultObj && resultObj.result === 0;
 };

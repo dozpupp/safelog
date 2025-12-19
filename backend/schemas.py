@@ -89,6 +89,49 @@ class RecoveryShareFetch(BaseModel):
 class RecoveryShareResponse(BaseModel):
     share_data: str
 
+
+class MultisigWorkflowBase(BaseModel):
+    name: str = Field(..., max_length=200)
+
+class MultisigWorkflowCreate(MultisigWorkflowBase):
+    secret_data: SecretCreate # Embedded secret creation
+    signers: List[str] # List of addresses
+    recipients: List[str] # List of addresses
+    signer_keys: dict[str, str] # map address -> encrypted_key
+    recipient_keys: dict[str, str] # map address -> encrypted_key
+
+class MultisigWorkflowSignerResponse(BaseModel):
+    user_address: str
+    has_signed: bool
+    signed_at: Optional[datetime]
+    user: Optional[UserResponse]
+
+    class Config:
+        orm_mode = True
+
+class MultisigWorkflowRecipientResponse(BaseModel):
+    user_address: str
+    user: Optional[UserResponse]
+
+    class Config:
+        orm_mode = True
+
+class MultisigWorkflowResponse(MultisigWorkflowBase):
+    id: int
+    secret_id: int
+    owner_address: str
+    status: str
+    created_at: datetime
+    owner: UserResponse
+    signers: List[MultisigWorkflowSignerResponse]
+    recipients: List[MultisigWorkflowRecipientResponse]
+
+    class Config:
+        orm_mode = True
+
+class MultisigSignatureRequest(BaseModel):
+    signature: str = Field(..., max_length=20000)
+
 class Token(BaseModel):
     access_token: str
     token_type: str

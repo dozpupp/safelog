@@ -5,7 +5,9 @@ import { usePQC } from '../context/PQCContext';
 import { useTheme } from '../context/ThemeContext';
 import VaultManager from './VaultManager';
 import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypto';
-import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon, Shield, FileSignature, BadgeCheck, AlertTriangle } from 'lucide-react';
+import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon, Shield, FileSignature, BadgeCheck, AlertTriangle, Workflow } from 'lucide-react';
+import MultisigCreateModal from './MultisigCreateModal';
+import MultisigWorkflow from './MultisigWorkflow';
 import { verifySignaturePQC } from '../utils/crypto';
 import API_ENDPOINTS from '../config';
 
@@ -71,6 +73,11 @@ export default function Dashboard() {
     const [selectedUser, setSelectedUser] = useState(null);
     const [sharedSecrets, setSharedSecrets] = useState([]);
 
+    // Multisig State
+    const [workflows, setWorkflows] = useState([]);
+    const [isMultisigCreateOpen, setIsMultisigCreateOpen] = useState(false);
+    const [selectedWorkflow, setSelectedWorkflow] = useState(null);
+
     // New State for V1.3
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [secretToEdit, setSecretToEdit] = useState(null);
@@ -87,7 +94,7 @@ export default function Dashboard() {
     const [uploadProgress, setUploadProgress] = useState(0);
     const [statusMessage, setStatusMessage] = useState('');
     const [isSigned, setIsSigned] = useState(false);
-    const [verificationResult, setVerificationResult] = useState(null); // { valid, signer }
+    const [verificationResult, setVerificationResult] = useState(null); // {valid, signer}
 
     const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -100,7 +107,23 @@ export default function Dashboard() {
     useEffect(() => {
         fetchSecrets();
         fetchSharedSecrets();
+        fetchWorkflows();
     }, [user]);
+
+    const fetchWorkflows = async () => {
+        if (!user || !token) return;
+        try {
+            const res = await fetch(API_ENDPOINTS.SECRETS.LIST + '/../multisig/workflows', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setWorkflows(data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch workflows", error);
+        }
+    };
 
     const fetchSecrets = async () => {
         if (!user || !token) return;
@@ -181,7 +204,7 @@ export default function Dashboard() {
             // Try parsing as JSON to detect PQC format
             const parsed = JSON.parse(encryptedString);
 
-            // Check for TrustKeys (PQC) format: { kem, iv, content }
+            // Check for TrustKeys (PQC) format: {kem, iv, content}
             if (parsed.kem && parsed.iv && parsed.content && authType === 'trustkeys') {
                 return await decryptPQC(parsed);
             }
@@ -746,14 +769,84 @@ export default function Dashboard() {
             <main className="max-w-5xl mx-auto">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Your Secrets</h2>
-                    <button
-                        onClick={() => setIsCreating(!isCreating)}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                    >
-                        <Plus className="w-4 h-4" />
-                        New Secret
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setIsCreating(!isCreating)}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                        >
+                            <Plus className="w-4 h-4" />
+                            New Secret
+                        </button>
+                        <button
+                            onClick={() => setIsMultisigCreateOpen(true)}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                        >
+                            <Workflow className="w-4 h-4" />
+                            New Workflow
+                        </button>
+                    </div>
                 </div>
+
+                {/* Pending Signatures Section */}
+                {workflows.some(w => w.status !== 'completed' && w.signers.find(s => s.user_address === user.address && !s.has_signed)) && (
+                    <div className="mb-8 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                        <h3 className="text-lg font-semibold text-amber-800 dark:text-amber-400 mb-4 flex items-center gap-2">
+                            <Shield className="w-5 h-5" /> Pending Signatures
+                        </h3>
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {workflows.filter(w => w.status !== 'completed' && w.signers.find(s => s.user_address === user.address && !s.has_signed)).map(w => (
+                                <div key={w.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-amber-200 dark:border-amber-800 shadow-sm hover:shadow-md transition-shadow">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="font-medium text-slate-900 dark:text-white truncate" title={w.name}>{w.name}</div>
+                                        <div className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">Action Required</div>
+                                    </div>
+                                    <div className="text-sm text-slate-500 mb-4">
+                                        Requested by: {w.owner?.username || w.owner_address.substring(0, 8)}
+                                    </div>
+                                    <button
+                                        onClick={() => setSelectedWorkflow(w)}
+                                        className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors"
+                                    >
+                                        Review & Sign
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* My Workflows Section */}
+                {workflows.length > 0 && (
+                    <div className="mb-10">
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                            <Workflow className="w-5 h-5" /> Multisig Workflows
+                        </h3>
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {workflows.map(w => (
+                                <div key={w.id} onClick={() => setSelectedWorkflow(w)} className="cursor-pointer bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="font-medium text-slate-900 dark:text-white truncate" title={w.name}>{w.name}</div>
+                                        {w.status === 'completed' ? (
+                                            <div className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">Completed</div>
+                                        ) : (
+                                            <div className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full">Pending</div>
+                                        )}
+                                    </div>
+                                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mb-3 overflow-hidden">
+                                        <div
+                                            className={`h-full ${w.status === 'completed' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                                            style={{ width: `${(w.signers.filter(s => s.has_signed).length / w.signers.length) * 100}%` }}
+                                        />
+                                    </div>
+                                    <div className="flex justify-between text-xs text-slate-500">
+                                        <span>{w.signers.filter(s => s.has_signed).length}/{w.signers.length} Signed</span>
+                                        <span>{new Date(w.created_at).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {
                     isProfileOpen && (
@@ -1254,6 +1347,34 @@ export default function Dashboard() {
             {showVaultManager && (
                 <VaultManager onClose={() => setShowVaultManager(false)} />
             )}
+
+            {
+                isMultisigCreateOpen && (
+                    <MultisigCreateModal
+                        isOpen={isMultisigCreateOpen}
+                        onClose={() => setIsMultisigCreateOpen(false)}
+                        onCreated={() => {
+                            fetchWorkflows();
+                            fetchSecrets(); // Might have new secret
+                        }}
+                    />
+                )
+            }
+
+            {
+                selectedWorkflow && (
+                    <MultisigWorkflow
+                        workflow={selectedWorkflow}
+                        onClose={() => setSelectedWorkflow(null)}
+                        onUpdate={(updated) => {
+                            setWorkflows(prev => prev.map(w => w.id === updated.id ? updated : w));
+                            if (updated.status === 'completed') {
+                                fetchSharedSecrets(); // Might have access now
+                            }
+                        }}
+                    />
+                )
+            }
         </div >
     );
 }

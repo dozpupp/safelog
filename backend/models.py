@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime, timezone
 
@@ -62,14 +62,56 @@ class Document(Base):
     owner = relationship("User", back_populates="documents")
 
 
-# Update User relationship
-User.documents = relationship("Document", back_populates="owner")
-
-class RecoveryShare(Base):
-    __tablename__ = "recovery_shares"
+class MultisigWorkflow(Base):
+    __tablename__ = "multisig_workflows"
 
     id = Column(Integer, primary_key=True, index=True)
-    google_id = Column(String, index=True, unique=True) # The 'sub' from Google ID Token
-    share_data = Column(Text) # Encrypted share blob (Share B)
+    name = Column(String, index=True)
+    owner_address = Column(String, ForeignKey("users.address"))
+    secret_id = Column(Integer, ForeignKey("secrets.id"))
+    status = Column(String, default="pending") # 'pending', 'completed', 'rejected'
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    owner = relationship("User", back_populates="workflows")
+    secret = relationship("Secret")
+    signers = relationship("MultisigWorkflowSigner", back_populates="workflow")
+    recipients = relationship("MultisigWorkflowRecipient", back_populates="workflow")
+
+class MultisigWorkflowSigner(Base):
+    __tablename__ = "multisig_workflow_signers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workflow_id = Column(Integer, ForeignKey("multisig_workflows.id"))
+    user_address = Column(String, ForeignKey("users.address"))
+    has_signed = Column(Boolean, default=False) # 0=False, 1=True
+    # SQLite/Some DBs are tricky with bools, but SQLAlchemy handles it. Let's stick to Boolean or Integer.
+    # Existing code doesn't show much Bool usage, let's use Boolean if possible, or Integer.
+    # We'll use Boolean from sqlalchemy? Imported? No, not imported. Let's use Boolean.
+    signature = Column(String, nullable=True)
+    signed_at = Column(DateTime, nullable=True)
+
+    workflow = relationship("MultisigWorkflow", back_populates="signers")
+    user = relationship("User")
+
+class MultisigWorkflowRecipient(Base):
+    __tablename__ = "multisig_workflow_recipients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workflow_id = Column(Integer, ForeignKey("multisig_workflows.id"))
+    user_address = Column(String, ForeignKey("users.address"))
+    encrypted_key = Column(Text) # Key encrypted for THIS recipient, held until release
+
+    workflow = relationship("MultisigWorkflow", back_populates="recipients")
+    user = relationship("User")
+
+# Update User relationship
+User.documents = relationship("Document", back_populates="owner")
+User.workflows = relationship("MultisigWorkflow", back_populates="owner")
+
+__tablename__ = "recovery_shares"
+
+id = Column(Integer, primary_key=True, index=True)
+google_id = Column(String, index=True, unique=True) # The 'sub' from Google ID Token
+share_data = Column(Text) # Encrypted share blob (Share B)
+created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
