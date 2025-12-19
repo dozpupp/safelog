@@ -108,7 +108,16 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                 }
             }
 
-            // 2. If no key yet, check SHARED/Access Grants (For Signers or Legacy)
+            // 2. Check if I am a Signer with direct key access
+            if (!encryptedKeyToDecrypt && isSigner) {
+                const mySignerEntry = workflow.signers.find(s => s.user_address === user.address);
+                if (mySignerEntry && mySignerEntry.encrypted_key) {
+                    console.log("Found signer key in workflow object");
+                    encryptedKeyToDecrypt = mySignerEntry.encrypted_key;
+                }
+            }
+
+            // 3. Fallback: Check SHARED/Access Grants (For Legacy Signers/Recipients)
             if (!encryptedKeyToDecrypt) {
                 try {
                     const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH, {
@@ -242,17 +251,35 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
             // Let's stick to signing what we See.
             // If we decrypted the struct, we sign the struct.
 
-            const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const shared = await res.json();
-            const myShare = shared.find(s => s.secret_id === workflow.secret_id);
+            let encryptedKey = null;
 
-            if (!myShare) throw new Error("Access denied");
+            // 1. Try to get key from my Signer Entry
+            const mySignerEntry = workflow.signers.find(s => s.user_address === user.address);
+            if (mySignerEntry && mySignerEntry.encrypted_key) {
+                encryptedKey = mySignerEntry.encrypted_key;
+            }
+
+            // 2. Fallback: Check SHARED/Access Grants (Legacy)
+            if (!encryptedKey) {
+                try {
+                    const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const shared = await res.json();
+                    const myShare = shared.find(s => s.secret_id === workflow.secret_id);
+                    if (myShare) {
+                        encryptedKey = myShare.encrypted_key;
+                    }
+                } catch (e) {
+                    console.warn("Legacy shared secret fetch failed", e);
+                }
+            }
+
+            if (!encryptedKey) throw new Error("Access denied: No key found for signing");
 
             let contentToSign;
             if (authType === 'trustkeys') {
-                const decryptedJson = await decryptPQC(JSON.parse(myShare.encrypted_key));
+                const decryptedJson = await decryptPQC(JSON.parse(encryptedKey));
                 // Canonicalize: Parse and Re-Stringify to remove artifacts/formatting diffs
                 try {
                     const obj = JSON.parse(decryptedJson);
@@ -263,7 +290,7 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                 console.log("handleSign: Decrypted Content Length (Original)", decryptedJson.length);
                 console.log("handleSign: Content to Sign Length (Canonical)", contentToSign.length);
             } else {
-                contentToSign = await decryptData(myShare.encrypted_key, currentAccount);
+                contentToSign = await decryptData(encryptedKey, currentAccount);
             }
 
             let signature = await signPQC(contentToSign);

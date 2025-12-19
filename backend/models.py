@@ -89,6 +89,7 @@ class MultisigWorkflowSigner(Base):
     # We'll use Boolean from sqlalchemy? Imported? No, not imported. Let's use Boolean.
     signature = Column(Text, nullable=True)
     signed_at = Column(DateTime, nullable=True)
+    encrypted_key = Column(Text, nullable=True) # Key for this signer, isolated from AccessGrant
 
     workflow = relationship("MultisigWorkflow", back_populates="signers")
     user = relationship("User")

@@ -384,24 +384,17 @@ def create_multisig_workflow(workflow: schemas.MultisigWorkflowCreate, current_u
         # For robustness, we check if user exists. If not, we might fail or create stub.
         # Let's assume frontend ensures users exist or we fail.
         # But we need to add to WorkflowSigner
+        # Validate and Store Key directly in Signer Entry (No AccessGrant)
+        normalized_keys = {k.lower(): v for k, v in workflow.signer_keys.items()}
+        key = normalized_keys.get(s_addr)
+        
         signer_entry = models.MultisigWorkflowSigner(
             workflow_id=new_workflow.id,
             user_address=s_addr,
-            has_signed=False
+            has_signed=False,
+            encrypted_key=key
         )
         db.add(signer_entry)
-
-        # Access Grant for Signer (Immediate)
-        # Normalize keys to ensure matching
-        normalized_keys = {k.lower(): v for k, v in workflow.signer_keys.items()}
-        if s_addr in normalized_keys:
-             new_grant = models.AccessGrant(
-                secret_id=new_secret.id,
-                grantee_address=s_addr,
-                encrypted_key=normalized_keys[s_addr],
-                expires_at=None # Indefinite access for signers? Or until workflow ends?
-            )
-             db.add(new_grant)
 
     # 4. Add Recipients (Access granted only upon completion)
     for recipient_addr in workflow.recipients:
@@ -478,7 +471,7 @@ def sign_multisig_workflow(workflow_id: int, sig_req: schemas.MultisigSignatureR
         
     signer = db.query(models.MultisigWorkflowSigner).filter(
         models.MultisigWorkflowSigner.workflow_id == wf.id,
-        models.MultisigWorkflowSigner.user_address == current_user.address
+        models.MultisigWorkflowSigner.user_address == current_user.address.lower()
     ).first()
     
     if not signer:

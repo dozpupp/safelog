@@ -105,6 +105,7 @@ class MultisigWorkflowSignerResponse(BaseModel):
     has_signed: bool
     signature: Optional[str] = None
     signed_at: Optional[datetime]
+    encrypted_key: Optional[str]
     user: Optional[UserResponse]
 
     class Config:
