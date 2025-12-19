@@ -10,8 +10,13 @@ const SignerVerificationBadge = ({ signer, contentToVerify }) => {
     const [status, setStatus] = useState('idle'); // idle, verifying, valid, invalid
 
     const verify = async () => {
-        if (!signer.signature || !contentToVerify) return;
+        console.log("Verify Clicked for", signer.user_address);
+        if (!signer.signature || !contentToVerify) {
+            console.warn("Missing signature or content", { sig: !!signer.signature, content: !!contentToVerify });
+            return;
+        }
         setStatus('verifying');
+        console.log("SignerVerificationBadge: Verifying content length", contentToVerify.length);
         try {
             // Reconstruct Signed Message (Sig + Content) or detached? 
             // In handleSign, we sent detached prefix/suffix.
@@ -133,6 +138,7 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
             if (isPQC) {
                 const decryptedJson = await decryptPQC(JSON.parse(encryptedDataString));
                 contentString = decryptedJson;
+                console.log("decryptContentValues: PQC Decrypted Length", contentString.length);
             } else {
                 contentString = await decryptData(encryptedDataString, currentAccount);
             }
@@ -145,6 +151,7 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                     parsed = JSON.parse(contentString);
                 } catch (e) {
                     // Not JSON, just string
+                    console.warn("Decrypt: Not JSON", e);
                 }
 
                 if (parsed && parsed.signature && parsed.signerPublicKey) {
@@ -171,6 +178,7 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
             } catch (e) {
                 console.error("Content processing failed", e);
                 setDecryptedContent(contentString);
+                setRawDecryptedContent(contentString);
                 setVerificationStatus('unsigned');
             }
 
@@ -218,7 +226,15 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
             let contentToSign;
             if (authType === 'trustkeys') {
                 const decryptedJson = await decryptPQC(JSON.parse(myShare.encrypted_key));
-                contentToSign = decryptedJson;
+                // Canonicalize: Parse and Re-Stringify to remove artifacts/formatting diffs
+                try {
+                    const obj = JSON.parse(decryptedJson);
+                    contentToSign = JSON.stringify(obj);
+                } catch (e) {
+                    contentToSign = decryptedJson;
+                }
+                console.log("handleSign: Decrypted Content Length (Original)", decryptedJson.length);
+                console.log("handleSign: Content to Sign Length (Canonical)", contentToSign.length);
             } else {
                 contentToSign = await decryptData(myShare.encrypted_key, currentAccount);
             }
@@ -226,20 +242,9 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
             let signature = await signPQC(contentToSign);
 
             // Handle "Signed Message" (Attached Code) vs "Detached Signature"
-            // Dilithium2 signature is 2420 bytes = 4840 hex chars.
-            // If the extension returns the full content + signature, we must extract it.
-            if (signature.length > 20000) {
-                console.warn("Signature is large, attempting to extract detached signature...");
-                const SIG_LEN_HEX = 2420 * 2; // 4840
-
-                // Candidate 1: Prefix (Standard Crystals implementations: sig + msg)
-                const prefixSig = signature.substring(0, SIG_LEN_HEX);
-                // Fallback: Assume the prefix is the signature (Standard Crystals-Dilithium)
-                // Verification is causing crashes due to size mismatches in the WASM library.
-                // We trust the structure: [Signature (2420)][Message]
-                console.log("Large signature blob detected. Extracting detached signature from prefix.");
-                signature = prefixSig;
-            }
+            // We now support Attached Signatures (Full Blob) in backend (Text column).
+            // This allows robust verification by extracting the message from the blob.
+            // if (signature.length > 20000) { ... } // REMOVED TRUNCATION
 
             const signRes = await fetch(`${API_ENDPOINTS.SECRETS.LIST}/../multisig/workflow/${workflow.id}/sign`, {
                 method: 'POST',

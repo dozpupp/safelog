@@ -87,7 +87,7 @@ class MultisigWorkflowSigner(Base):
     # SQLite/Some DBs are tricky with bools, but SQLAlchemy handles it. Let's stick to Boolean or Integer.
     # Existing code doesn't show much Bool usage, let's use Boolean if possible, or Integer.
     # We'll use Boolean from sqlalchemy? Imported? No, not imported. Let's use Boolean.
-    signature = Column(String, nullable=True)
+    signature = Column(Text, nullable=True)
     signed_at = Column(DateTime, nullable=True)
 
     workflow = relationship("MultisigWorkflow", back_populates="signers")

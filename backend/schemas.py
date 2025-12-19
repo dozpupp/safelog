@@ -131,7 +131,7 @@ class MultisigWorkflowResponse(MultisigWorkflowBase):
         orm_mode = True
 
 class MultisigSignatureRequest(BaseModel):
-    signature: str = Field(..., max_length=20000)
+    signature: str = Field(..., max_length=52_500_000)
 
 class Token(BaseModel):
     access_token: str
