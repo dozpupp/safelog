@@ -103,6 +103,7 @@ class MultisigWorkflowCreate(MultisigWorkflowBase):
 class MultisigWorkflowSignerResponse(BaseModel):
     user_address: str
     has_signed: bool
+    signature: Optional[str] = None
     signed_at: Optional[datetime]
     user: Optional[UserResponse]
 

@@ -6,6 +6,57 @@ import { useWeb3 } from '../context/Web3Context';
 import API_ENDPOINTS from '../config';
 import { decryptData, verifySignaturePQC } from '../utils/crypto';
 
+const SignerVerificationBadge = ({ signer, contentToVerify }) => {
+    const [status, setStatus] = useState('idle'); // idle, verifying, valid, invalid
+
+    const verify = async () => {
+        if (!signer.signature || !contentToVerify) return;
+        setStatus('verifying');
+        try {
+            // Reconstruct Signed Message (Sig + Content) or detached? 
+            // In handleSign, we sent detached prefix/suffix.
+            // verifySignaturePQC handles detached.
+            const isValid = await verifySignaturePQC(contentToVerify, signer.signature, signer.user_address);
+            setStatus(isValid ? 'valid' : 'invalid');
+        } catch (e) {
+            console.error(e);
+            setStatus('invalid');
+        }
+    };
+
+    if (!signer.signature) return null;
+
+    if (status === 'idle') {
+        return (
+            <button
+                onClick={(e) => { e.stopPropagation(); verify(); }}
+                className="text-xs text-indigo-500 hover:text-indigo-400 font-medium px-2 py-1 rounded bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 transition-colors"
+                title="Verify Signature"
+            >
+                Verify
+            </button>
+        );
+    }
+
+    if (status === 'verifying') {
+        return <span className="text-xs text-slate-400 animate-pulse">Verifying...</span>;
+    }
+
+    if (status === 'valid') {
+        return (
+            <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded border border-emerald-100 dark:border-emerald-800">
+                <Shield className="w-3 h-3" /> Verified
+            </span>
+        );
+    }
+
+    return (
+        <span className="flex items-center gap-1 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded border border-red-100 dark:border-red-800">
+            <AlertTriangle className="w-3 h-3" /> Invalid
+        </span>
+    );
+};
+
 export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
     const { user, token, authType } = useAuth();
     const { encrypt: encryptPQC, decrypt: decryptPQC, sign: signPQC, pqcAccount, kyberKey } = usePQC();
@@ -14,6 +65,7 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
     const [isSigning, setIsSigning] = useState(false);
     const [isViewing, setIsViewing] = useState(false);
     const [decryptedContent, setDecryptedContent] = useState(null);
+    const [rawDecryptedContent, setRawDecryptedContent] = useState(null); // The actual string signers signed
     const [verificationStatus, setVerificationStatus] = useState(null); // 'verified', 'failed', 'unsigned'
     const [error, setError] = useState('');
 
@@ -87,43 +139,46 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
 
             // Check structure
             try {
-                const parsed = JSON.parse(contentString);
-                // Schema: { content, signature, signerPublicKey, type, name, mime... }
-                // Wait, in Modal we did:
-                // rawContent = JSON.stringify({ type: 'file', content: base64 ...}) OR plain string
-                // THEN payloadToEncrypt = JSON.stringify({ content: rawContent, signature, signerPublicKey })
+                let parsed;
+                // Try to parse the decrypted string
+                try {
+                    parsed = JSON.parse(contentString);
+                } catch (e) {
+                    // Not JSON, just string
+                }
 
                 if (parsed && parsed.signature && parsed.signerPublicKey) {
-                    // It is a signed document
+                    // It is a Signed Document (Creator's)
                     const isValid = await verifySignaturePQC(parsed.content, parsed.signature, parsed.signerPublicKey);
                     setVerificationStatus(isValid ? 'verified' : 'failed');
 
-                    // Inner content might be JSON (File) or String
+                    // If inner content is file object, try to parse it
                     try {
                         const inner = JSON.parse(parsed.content);
-                        setDecryptedContent(inner); // Could be file object
+                        setDecryptedContent(inner);
                     } catch {
-                        setDecryptedContent(parsed.content); // Plain text
+                        setDecryptedContent(parsed.content);
                     }
-                } else {
-                    setVerificationStatus('unsigned');
-                    // Just content
-                    if (parsed && parsed.type === 'file') {
-                        setDecryptedContent(parsed);
-                    } else {
-                        setDecryptedContent(contentString); // Might be raw string
-                    }
-                }
 
+                    // Signers sign the PACKAGED content (contentString)
+                    setRawDecryptedContent(contentString);
+                } else {
+                    // Standard Content (Unsigned by creator wrapper)
+                    setVerificationStatus('unsigned');
+                    setDecryptedContent(parsed || contentString);
+                    setRawDecryptedContent(contentString);
+                }
             } catch (e) {
-                // Not JSON, simple string
-                setVerificationStatus('unsigned');
+                console.error("Content processing failed", e);
                 setDecryptedContent(contentString);
+                setVerificationStatus('unsigned');
             }
 
-            setIsViewing(false); // Done loading
+            setIsViewing(false);
         } catch (e) {
-            throw e;
+            console.error("Decrypt failed", e);
+            setError("Failed to decrypt: " + e.message);
+            setIsViewing(false);
         }
     };
 
@@ -288,29 +343,46 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                         <h4 className="text-sm font-medium text-slate-500 mb-3 uppercase tracking-wider">Signers</h4>
                         <div className="space-y-2">
                             {workflow.signers.map(s => (
-                                <div key={s.user_address} className="flex items-center justify-between p-2 rounded hover:bg-slate-50 dark:hover:bg-slate-800">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-2 h-2 rounded-full ${s.has_signed ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                                        <div className="text-sm">
-                                            <div className="font-medium text-slate-900 dark:text-slate-200">
-                                                {s.user?.username || s.user_address.substring(0, 8)}
-                                                {s.user_address === user.address && " (You)"}
+                                    <div key={s.user_address} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-2 h-2 rounded-full ${s.has_signed ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                            <div>
+                                                <div className="font-medium text-slate-900 dark:text-slate-200 flex items-center gap-2">
+                                                    {s.user?.username || s.user_address.substring(0, 12)}
+                                                    {s.user_address === user.address && <span className="text-xs bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500">You</span>}
+                                                </div>
+                                                {s.has_signed && (
+                                                    <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                                                        <span className="flex items-center gap-1">
+                                                            <Check className="w-3 h-3" /> Signed
+                                                        </span>
+                                                        <span className="text-slate-400">•</span>
+                                                        <span>{new Date(s.signed_at).toLocaleDateString()}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                            {s.has_signed && (
-                                                <div className="text-xs text-slate-500 flex items-center gap-1">
-                                                    <Clock className="w-3 h-3" /> {new Date(s.signed_at).toLocaleString()}
+                                        </div>
+                                        {/* Verification Badge */}
+                                        {s.has_signed && decryptedContent && (
+                                            <SignerVerificationBadge 
+                                                signer={s} 
+                                                contentToVerify={rawDecryptedContent} 
+                                            />
+                                        )}
+                                    </div>
+                                                    <Clock className="w-3 h-3" /> { new Date(s.signed_at).toLocaleString() }
                                                 </div>
                                             )}
-                                        </div>
-                                    </div>
-                                    {s.has_signed && <Check className="w-4 h-4 text-emerald-500" />}
-                                </div>
-                            ))}
-                        </div>
                     </div>
+                </div>
+                {s.has_signed && <Check className="w-4 h-4 text-emerald-500" />}
+            </div>
+                            ))}
+        </div>
+                    </div >
 
-                    {/* Recipients List */}
-                    <div>
+        {/* Recipients List */ }
+        < div >
                         <h4 className="text-sm font-medium text-slate-500 mb-3 uppercase tracking-wider">Recipients</h4>
                         <div className="space-y-2">
                             {workflow.recipients.map(r => (
@@ -329,42 +401,48 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                                 </div>
                             ))}
                         </div>
-                    </div>
+                    </div >
 
-                    {/* View/Decrypt Section */}
-                    {canView && !decryptedContent && (
-                        <button
-                            onClick={fetchAndDecrypt}
-                            className="w-full border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 py-2 rounded-lg flex items-center justify-center gap-2"
-                        >
-                            <Eye className="w-4 h-4" /> View Secret Content
-                        </button>
-                    )}
+        {/* View/Decrypt Section */ }
+    {
+        canView && !decryptedContent && (
+            <button
+                onClick={fetchAndDecrypt}
+                className="w-full border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 py-2 rounded-lg flex items-center justify-center gap-2"
+            >
+                <Eye className="w-4 h-4" /> View Secret Content
+            </button>
+        )
+    }
 
-                    {decryptedContent && renderContent()}
+    { decryptedContent && renderContent() }
 
-                    {/* Actions */}
-                    {error && (
-                        <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4" /> {error}
-                        </div>
-                    )}
-
-                    {isSigner && !hasSigned && workflow.status !== 'completed' && (
-                        <button
-                            onClick={handleSign}
-                            disabled={isSigning}
-                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-                        >
-                            {isSigning ? 'Signing...' : (
-                                <>
-                                    <Shield className="w-4 h-4" /> Sign Workflow
-                                </>
-                            )}
-                        </button>
-                    )}
-                </div>
+    {/* Actions */ }
+    {
+        error && (
+            <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" /> {error}
             </div>
-        </div>
+        )
+    }
+
+    {
+        isSigner && !hasSigned && workflow.status !== 'completed' && (
+            <button
+                onClick={handleSign}
+                disabled={isSigning}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+                {isSigning ? 'Signing...' : (
+                    <>
+                        <Shield className="w-4 h-4" /> Sign Workflow
+                    </>
+                )}
+            </button>
+        )
+    }
+                </div >
+            </div >
+        </div >
     );
 }
