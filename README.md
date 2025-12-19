@@ -15,7 +15,26 @@ A secure secret management and document signing application featuring **Quantum-
   - PQC Users: Kyber-768 Encapsulation + AES-GCM (TrustKeys).
 - 🤝 **Secure Sharing** - Share encrypted secrets between any user type (Eth ↔ PQC).
 - ✍️ **Signed Documents** - Create, share, and verify digitally signed documents (Sign-then-Encrypt) to prove authorship.
+- 📝 **Multisignature Workflows** - Create approval chains requiring multiple signatures (`M-of-N` or `N-of-N`) before secrets are cryptographically released to recipients.
 - 👤 **User Profiles** - Manage usernames and view PQC identities.
+
+## 📝 Multisignature Workflows
+
+Safelog implements a robust **Zero-Trust Multisignature** system designed for high-security approvals (e.g., launch codes, sensitive disclosures).
+
+### Core Principles
+1.  **Release-on-Completion**: Recipients **cannot** access the content until **ALL** required signers have signed. The encryption keys for recipients are literally not generated until the final signature is applied.
+2.  **End-to-End Encryption**: The backend serves as a coordinator but **never** has access to the secret content or the keys.
+    *   **Creator** encrypts for Signers.
+    *   **Last Signer** encrypts for Recipients.
+3.  **Isolated Workflows**: Signers access requests via a dedicated "Workflows" interface, preventing clutter in their standard "Shared Secrets" vault.
+4.  **Attached Signatures**: Supports large post-quantum signatures (Dilithium) attached directly to the payload, ensuring the exact viewed content is what is cryptographically signed.
+
+### The Flow
+1.  **Create**: A Creator defines a secret, selects **Signers**, and optionally **Recipients**.
+2.  **Sign**: Signers review the content and cryptographically sign it.
+3.  **Release**: When the **Last Signer** submits their signature, their client automatically generates and encrypts access keys for the Recipients.
+4.  **Access**: Only then does the workflow status flip to `COMPLETED`, allowing Recipients to decrypt and view the result.
 
 ## ⚠️ Security Notices
 
