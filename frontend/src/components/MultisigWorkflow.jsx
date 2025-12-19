@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePQC } from '../context/PQCContext';
 import { useWeb3 } from '../context/Web3Context';
 import API_ENDPOINTS from '../config';
-import { decryptData, verifySignaturePQC } from '../utils/crypto';
+import { decryptData, verifySignaturePQC, encryptData } from '../utils/crypto';
 
 const SignerVerificationBadge = ({ signer, contentToVerify }) => {
     const [status, setStatus] = useState('idle'); // idle, verifying, valid, invalid
@@ -72,6 +72,8 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
     const [decryptedContent, setDecryptedContent] = useState(null);
     const [rawDecryptedContent, setRawDecryptedContent] = useState(null); // The actual string signers signed
     const [verificationStatus, setVerificationStatus] = useState(null); // 'verified', 'failed', 'unsigned'
+    const [creatorSignature, setCreatorSignature] = useState(null);
+    const [creatorSignedContent, setCreatorSignedContent] = useState(null);
     const [error, setError] = useState('');
 
     const isOwner = workflow.owner_address === user.address;
@@ -91,39 +93,57 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
         setIsViewing(true);
         setError('');
         try {
-            const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const shared = await res.json();
             if (workflow.secret_id === undefined) {
                 console.error("Workflow object missing secret_id", workflow);
                 throw new Error("Invalid workflow data: missing secret ID");
             }
 
-            const myShare = shared.find(s => s.secret_id == workflow.secret_id);
+            let encryptedKeyToDecrypt = null;
 
-            if (!myShare) {
-                // If I am owner, I might not have a "share", but I own the secret.
-                if (isOwner) {
-                    // For owner, we need to fetch the secret directly
-                    // But wait, the secret content in `MultisigCreateModal` was encrypted for the owner too.
-                    // Does the backend return `encrypted_data` for the owner in `SHARED_WITH`? No.
-                    // The owner should use `API_ENDPOINTS.SECRETS.LIST`.
+            // 1. Check if I am a Recipient with direct key access (Completed Workflow)
+            if (isRecipient && workflow.status === 'completed') {
+                const myRecipientEntry = workflow.recipients.find(r => r.user_address === user.address);
+                if (myRecipientEntry && myRecipientEntry.encrypted_key) {
+                    encryptedKeyToDecrypt = myRecipientEntry.encrypted_key;
+                }
+            }
 
-                    const secretsRes = await fetch(API_ENDPOINTS.SECRETS.LIST, {
+            // 2. If no key yet, check SHARED/Access Grants (For Signers or Legacy)
+            if (!encryptedKeyToDecrypt) {
+                try {
+                    const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
-                    const secrets = await secretsRes.json();
-                    const mySecret = secrets.find(s => s.id === workflow.secret_id);
-                    if (mySecret) {
-                        return await decryptContentValues(mySecret.encrypted_data, authType === 'trustkeys');
+                    if (res.ok) {
+                        const shared = await res.json();
+                        const myShare = shared.find(s => s.secret_id == workflow.secret_id);
+                        if (myShare) {
+                            encryptedKeyToDecrypt = myShare.encrypted_key;
+                        }
                     }
+                } catch (err) {
+                    console.warn("Failed to fetch shared secrets", err);
                 }
+            }
+
+            // 3. If I am Owner, I fetch the secret directly
+            if (!encryptedKeyToDecrypt && isOwner) {
+                const secretsRes = await fetch(API_ENDPOINTS.SECRETS.LIST, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const secrets = await secretsRes.json();
+                const mySecret = secrets.find(s => s.id === workflow.secret_id);
+                if (mySecret) {
+                    encryptedKeyToDecrypt = mySecret.encrypted_data;
+                }
+            }
+
+            if (!encryptedKeyToDecrypt) {
                 throw new Error("You don't have access to the secret content yet.");
             }
 
-            // Access Grant found
-            await decryptContentValues(myShare.encrypted_key, authType === 'trustkeys');
+            // Decrypt
+            await decryptContentValues(encryptedKeyToDecrypt, authType === 'trustkeys');
 
         } catch (e) {
             console.error("View failed", e);
@@ -159,6 +179,10 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                     const isValid = await verifySignaturePQC(parsed.content, parsed.signature, parsed.signerPublicKey);
                     setVerificationStatus(isValid ? 'verified' : 'failed');
 
+                    // Capture Creator Signature info for the list
+                    setCreatorSignature(parsed.signature);
+                    setCreatorSignedContent(parsed.content);
+
                     // If inner content is file object, try to parse it
                     try {
                         const inner = JSON.parse(parsed.content);
@@ -172,6 +196,8 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                 } else {
                     // Standard Content (Unsigned by creator wrapper)
                     setVerificationStatus('unsigned');
+                    setCreatorSignature(null);
+                    setCreatorSignedContent(null);
                     setDecryptedContent(parsed || contentString);
                     setRawDecryptedContent(contentString);
                 }
@@ -180,6 +206,7 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                 setDecryptedContent(contentString);
                 setRawDecryptedContent(contentString);
                 setVerificationStatus('unsigned');
+                setCreatorSignature(null);
             }
 
             setIsViewing(false);
@@ -243,8 +270,40 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
 
             // Handle "Signed Message" (Attached Code) vs "Detached Signature"
             // We now support Attached Signatures (Full Blob) in backend (Text column).
-            // This allows robust verification by extracting the message from the blob.
-            // if (signature.length > 20000) { ... } // REMOVED TRUNCATION
+
+            // Last Signer Logic: Release Recipient Keys
+            // Check if I am the LAST signer (Assuming I am about to sign and succeed)
+            const alreadySignedCount = workflow.signers.filter(s => s.has_signed).length;
+            const totalSigners = workflow.signers.length;
+            const isLastSigner = (alreadySignedCount + 1) === totalSigners;
+
+            let recipientKeys = null;
+            if (isLastSigner && workflow.recipients && workflow.recipients.length > 0) {
+                console.log("Last Signer identified. Generating keys for recipients...");
+                recipientKeys = {};
+                for (const r of workflow.recipients) {
+                    const pubKey = r.user?.encryption_public_key;
+                    if (!pubKey) continue;
+
+                    try {
+                        let encrypted;
+                        // Heuristic: PQC keys are long (>200 chars)
+                        if (pubKey.length > 200) {
+                            const res = await encryptPQC(contentToSign, pubKey);
+                            encrypted = JSON.stringify(res);
+                        } else {
+                            encrypted = await encryptData(contentToSign, pubKey);
+                        }
+                        recipientKeys[r.user_address] = encrypted;
+                    } catch (encErr) {
+                        console.error(`Failed to encrypt for recipient ${r.user_address}`, encErr);
+                        // Continue? Or fail? If we fail, workflow can't complete.
+                        // Better to warn but continue, or fail to ensure integrity.
+                        // Failsafe: Let's fail hard so we know something is wrong.
+                        throw new Error(`Failed to encrypt for recipient ${r.user?.username || r.user_address}: ${encErr.message}`);
+                    }
+                }
+            }
 
             const signRes = await fetch(`${API_ENDPOINTS.SECRETS.LIST}/../multisig/workflow/${workflow.id}/sign`, {
                 method: 'POST',
@@ -252,7 +311,10 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ signature })
+                body: JSON.stringify({
+                    signature,
+                    recipient_keys: recipientKeys
+                })
             });
 
             if (signRes.ok) {
@@ -281,11 +343,12 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
             <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800">
                 <div className="flex justify-between items-start mb-2">
                     <h5 className="text-sm font-medium text-slate-500">Decrypted Content</h5>
-                    {verificationStatus === 'verified' && (
+                    {/* {verificationStatus === 'verified' && (
                         <div className="flex items-center gap-1 text-emerald-600 text-xs px-2 py-1 bg-emerald-100 rounded-full">
                             <Shield className="w-3 h-3" /> Signed by Creator
                         </div>
-                    )}
+                    )} */ // REMOVED BADGE - MOVED TO SIGNERS LIST
+                    }
                     {verificationStatus === 'failed' && (
                         <div className="flex items-center gap-1 text-red-600 text-xs px-2 py-1 bg-red-100 rounded-full">
                             <AlertTriangle className="w-3 h-3" /> Signature Invalid
@@ -347,35 +410,50 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                     <div>
                         <h4 className="text-sm font-medium text-slate-500 mb-3 uppercase tracking-wider">Signers</h4>
                         <div className="space-y-2">
-                            {workflow.signers.map(s => (
-                                <div key={s.user_address} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-2 h-2 rounded-full ${s.has_signed ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                                        <div>
-                                            <div className="font-medium text-slate-900 dark:text-slate-200 flex items-center gap-2">
-                                                {s.user?.username || s.user_address.substring(0, 12)}
-                                                {s.user_address === user.address && <span className="text-xs bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500">You</span>}
-                                            </div>
-                                            {s.has_signed && (
-                                                <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                                                    <span className="flex items-center gap-1">
-                                                        <Check className="w-3 h-3" /> Signed
-                                                    </span>
-                                                    <span className="text-slate-400">•</span>
-                                                    <span>{new Date(s.signed_at).toLocaleDateString()}</span>
+                            {(() => {
+                                // Prepare Signers List with Virtual Creator
+                                let displayedSigners = [...workflow.signers];
+                                // Always show Creator if not in list (Implicitly signed)
+                                if (!displayedSigners.find(s => s.user_address === workflow.owner_address)) {
+                                    displayedSigners.unshift({
+                                        user_address: workflow.owner_address,
+                                        user: workflow.owner,
+                                        has_signed: true,
+                                        signature: creatorSignature, // Will be null until decrypted
+                                        signed_at: workflow.created_at,
+                                        isCreator: true
+                                    });
+                                }
+                                return displayedSigners.map(s => (
+                                    <div key={s.user_address} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-2 h-2 rounded-full ${s.has_signed ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                            <div>
+                                                <div className="font-medium text-slate-900 dark:text-slate-200 flex items-center gap-2">
+                                                    {s.user?.username || s.user_address.substring(0, 12)}
+                                                    {s.user_address === user.address && <span className="text-xs bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500">You</span>}
                                                 </div>
-                                            )}
+                                                {s.has_signed && (
+                                                    <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                                                        <span className="flex items-center gap-1">
+                                                            <Check className="w-3 h-3" /> Signed
+                                                        </span>
+                                                        <span className="text-slate-400">•</span>
+                                                        <span>{new Date(s.signed_at).toLocaleDateString()}</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
+                                        {/* Verification Badge */}
+                                        {s.has_signed && decryptedContent && (
+                                            <SignerVerificationBadge
+                                                signer={s}
+                                                contentToVerify={s.isCreator ? creatorSignedContent : rawDecryptedContent}
+                                            />
+                                        )}
                                     </div>
-                                    {/* Verification Badge */}
-                                    {s.has_signed && decryptedContent && (
-                                        <SignerVerificationBadge
-                                            signer={s}
-                                            contentToVerify={rawDecryptedContent}
-                                        />
-                                    )}
-                                </div>
-                            ))}
+                                ));
+                            })()}
                         </div>
                     </div>
 
@@ -436,6 +514,17 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                                         <Shield className="w-4 h-4" /> Sign Workflow
                                     </>
                                 )}
+                            </button>
+                        )
+                    }
+
+                    {
+                        (!isSigner || hasSigned || workflow.status === 'completed') && (
+                            <button
+                                onClick={onClose}
+                                className="w-full border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-lg font-medium transition-colors"
+                            >
+                                Close
                             </button>
                         )
                     }

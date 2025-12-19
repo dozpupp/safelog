@@ -1368,6 +1368,7 @@ export default function Dashboard() {
                         onClose={() => setSelectedWorkflow(null)}
                         onUpdate={(updated) => {
                             setWorkflows(prev => prev.map(w => w.id === updated.id ? updated : w));
+                            setSelectedWorkflow(updated); // Update the active modal view
                             if (updated.status === 'completed') {
                                 fetchSharedSecrets(); // Might have access now
                             }

@@ -112,6 +112,7 @@ class MultisigWorkflowSignerResponse(BaseModel):
 
 class MultisigWorkflowRecipientResponse(BaseModel):
     user_address: str
+    encrypted_key: Optional[str]
     user: Optional[UserResponse]
 
     class Config:
@@ -132,6 +133,7 @@ class MultisigWorkflowResponse(MultisigWorkflowBase):
 
 class MultisigSignatureRequest(BaseModel):
     signature: str = Field(..., max_length=52_500_000)
+    recipient_keys: Optional[dict[str, str]] = None # Only provided by the last signer
 
 class Token(BaseModel):
     access_token: str

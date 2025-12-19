@@ -403,19 +403,18 @@ def create_multisig_workflow(workflow: schemas.MultisigWorkflowCreate, current_u
             )
              db.add(new_grant)
 
-    # 4. Add Recipients (No Access Yet)
+    # 4. Add Recipients (Access granted only upon completion)
     for recipient_addr in workflow.recipients:
         r_addr = recipient_addr.lower()
         key = workflow.recipient_keys.get(r_addr)
-        if key:
-            recipient_entry = models.MultisigWorkflowRecipient(
-                workflow_id=new_workflow.id,
-                user_address=r_addr,
-                encrypted_key=key
-            )
-            db.add(recipient_entry)
-        # If no key provided for recipient, they can't receive it? Warning?
-        # Proceeding assuming valid inputs.
+        
+        # Always add recipient, even if key is deferred
+        recipient_entry = models.MultisigWorkflowRecipient(
+            workflow_id=new_workflow.id,
+            user_address=r_addr,
+            encrypted_key=key # Can be None initially
+        )
+        db.add(recipient_entry)
 
     db.commit()
     db.refresh(new_workflow)
@@ -433,9 +432,16 @@ def list_multisig_workflows(current_user: models.User = Depends(get_current_user
     # Helper to fetch workflows where I am signer
     signed_subq = db.query(models.MultisigWorkflowSigner.workflow_id).filter(models.MultisigWorkflowSigner.user_address == current_user.address)
     as_signer = db.query(models.MultisigWorkflow).filter(models.MultisigWorkflow.id.in_(signed_subq)).all()
+
+    # Helper to fetch workflows where I am recipient (ONLY COMPLETED)
+    recipient_subq = db.query(models.MultisigWorkflowRecipient.workflow_id).filter(models.MultisigWorkflowRecipient.user_address == current_user.address)
+    as_recipient = db.query(models.MultisigWorkflow).filter(
+        models.MultisigWorkflow.id.in_(recipient_subq),
+        models.MultisigWorkflow.status == 'completed'
+    ).all()
     
     # Deduplicate (if I am owner AND signer?)
-    all_wf = {w.id: w for w in owned + as_signer}
+    all_wf = {w.id: w for w in owned + as_signer + as_recipient}
     return list(all_wf.values())
 
 @app.get("/multisig/workflow/{workflow_id}", response_model=schemas.MultisigWorkflowResponse)
@@ -450,8 +456,16 @@ def get_multisig_workflow(workflow_id: int, current_user: models.User = Depends(
         models.MultisigWorkflowSigner.workflow_id == wf.id,
         models.MultisigWorkflowSigner.user_address == current_user.address
     ).first() is not None
+
+    is_recipient = db.query(models.MultisigWorkflowRecipient).filter(
+        models.MultisigWorkflowRecipient.workflow_id == wf.id,
+        models.MultisigWorkflowRecipient.user_address == current_user.address
+    ).first() is not None
     
-    if not (is_owner or is_signer):
+    # Access Logic: Owner/Signer always. Recipient ONLY if completed.
+    has_access = is_owner or is_signer or (is_recipient and wf.status == 'completed')
+
+    if not has_access:
          raise HTTPException(status_code=403, detail="Not authorized")
          
     return wf
@@ -477,7 +491,18 @@ def sign_multisig_workflow(workflow_id: int, sig_req: schemas.MultisigSignatureR
     signer.has_signed = True
     signer.signature = sig_req.signature
     signer.signed_at = datetime.now(timezone.utc)
-    db.commit() # Commit this signature first
+    
+    # Store Recipient Keys (Release Mechanism) if provided
+    if sig_req.recipient_keys:
+        for r_addr, enc_key in sig_req.recipient_keys.items():
+            recipient = db.query(models.MultisigWorkflowRecipient).filter(
+                models.MultisigWorkflowRecipient.workflow_id == wf.id,
+                models.MultisigWorkflowRecipient.user_address == r_addr
+            ).first()
+            if recipient:
+                recipient.encrypted_key = enc_key
+
+    db.commit() # Commit this signature and keys first
     
     # Check if ALL have signed
     all_signers = db.query(models.MultisigWorkflowSigner).filter(models.MultisigWorkflowSigner.workflow_id == wf.id).all()
