@@ -45,6 +45,30 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // --- Authentication Middleware ---
+    const apiKey = req.headers['x-api-key'];
+    const validKey = process.env.PQC_SHARED_SECRET;
+
+    // Only protect /sign and /verify (optionally verify can be public but safer to close it)
+    // Actually, verify is used by clients mostly? No, backend verifies signatures from client.
+    // Client verifies server signatures? Yes, decode_access_token verifies server sig.
+    // BUT decode_access_token runs on Backend.
+    // So Backend is the ONLY consumer of this service.
+
+    if (!validKey) {
+        console.error("FATAL: PQC_SHARED_SECRET not set");
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: "Server Configuration Error" }));
+        return;
+    }
+
+    if (apiKey !== validKey) {
+        res.writeHead(401);
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
+    }
+    // ---------------------------------
+
     if (req.method === 'GET' && req.url === '/server-public-key') {
         res.writeHead(200);
         res.end(JSON.stringify({ publicKey: toHex(serverKeys.publicKey) }));

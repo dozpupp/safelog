@@ -91,6 +91,7 @@ Safelog implements a robust **Zero-Trust Multisignature** system designed for hi
     cp .env.example .env
     # CRITICAL: Edit .env and set a random SAFELOG_SECRET_KEY
     # The application will fail to start if this key is missing.
+    # ALSO: Ensure PQC_SHARED_SECRET is set (check .env.example) to secure backend<->service communication.
     
     # 2. Install Python Dependencies
     pip3 install -r requirements.txt
@@ -163,6 +164,7 @@ Safelog implements a robust **Zero-Trust Multisignature** system designed for hi
  ### Environment Variables
  - **backend/.env**:
    - `SAFELOG_SECRET_KEY`: **Mandatory**. Used to deterministically generate server PQC keys.
+   - `PQC_SHARED_SECRET`: **Mandatory**. Shared secret / API Key for authenticating the PQC Microservice.
    - `ALLOWED_ORIGINS`: CORS settings (default includes localhost).
    - `GOOGLE_CLIENT_ID`: (Disabled) Previously used for MPC Recovery.
  

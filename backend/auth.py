@@ -17,7 +17,9 @@ def get_server_public_key():
     if _SERVER_PUBLIC_KEY:
         return _SERVER_PUBLIC_KEY
     try:
-        res = requests.get(f"{PQC_SERVICE_URL}/server-public-key", timeout=2)
+        secret = os.getenv("PQC_SHARED_SECRET")
+        headers = {"x-api-key": secret} if secret else {}
+        res = requests.get(f"{PQC_SERVICE_URL}/server-public-key", headers=headers, timeout=2)
         if res.status_code == 200:
             _SERVER_PUBLIC_KEY = res.json().get("publicKey")
             return _SERVER_PUBLIC_KEY
@@ -51,6 +53,7 @@ def verify_pqc_signature(public_key: str, nonce: str, signature: str) -> bool:
                     "signature": signature,
                     "publicKey": public_key
                 },
+                headers={"x-api-key": os.getenv("PQC_SHARED_SECRET")},
                 timeout=5
             )
             
@@ -103,7 +106,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     
     # 2. Sign via PQC Service
     try:
-        res = requests.post(f"{PQC_SERVICE_URL}/sign", json={"message": message}, timeout=5)
+        secret = os.getenv("PQC_SHARED_SECRET")
+        headers = {"x-api-key": secret}
+        res = requests.post(f"{PQC_SERVICE_URL}/sign", json={"message": message}, headers=headers, timeout=5)
         if res.status_code != 200:
             raise Exception(f"Signing failed: {res.text}")
         
@@ -143,6 +148,7 @@ def decode_access_token(token: str):
                 "signature": signature_hex,
                 "publicKey": server_key
             },
+            headers={"x-api-key": os.getenv("PQC_SHARED_SECRET")},
             timeout=2
         )
         

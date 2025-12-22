@@ -10,6 +10,11 @@ fi
 # Set allow origins for development (Vite default + Self)
 export ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:5173"
 
+# Load environment variables from .env
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+fi
+
 # Ensure we are in the script's directory (backend)
 cd "$(dirname "$0")"
 
