@@ -44,9 +44,9 @@ export default function VaultManager({ onClose }) {
     const handleSwitch = async (id) => {
         try {
             await switchVaultAccount(id);
-            setMsg({ type: 'success', text: 'Switched account. Please Re-Login if needed.' });
-            refresh();
-            // Optional: Auto-close?
+            setMsg({ type: 'success', text: 'Switched. Logging out...' });
+            setTimeout(onClose, 500);
+
         } catch (e) {
             setMsg({ type: 'error', text: e.message });
         }
@@ -120,7 +120,7 @@ export default function VaultManager({ onClose }) {
                                         </div>
                                         <div className="text-xs text-slate-500 font-mono mt-1">ID: {acc.id.substring(0, 8)}...</div>
                                     </div>
-                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="flex items-center gap-2">
                                         {!acc.isActive && (
                                             <button
                                                 onClick={() => handleSwitch(acc.id)}

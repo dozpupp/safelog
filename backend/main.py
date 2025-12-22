@@ -105,7 +105,13 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     # Find or create user
     user = db.query(models.User).filter(models.User.address == address).first()
     if not user:
-        user = models.User(address=address, encryption_public_key=request.encryption_public_key)
+        # Default username logic: Use provided username OR first 7 chars of address
+        default_username = request.username if request.username else address[:7]
+        user = models.User(
+            address=address, 
+            encryption_public_key=request.encryption_public_key,
+            username=default_username
+        )
         db.add(user)
         db.commit()
         db.refresh(user)

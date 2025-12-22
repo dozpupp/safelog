@@ -73,7 +73,8 @@ export const Web3Provider = ({ children }) => {
                 address: account,
                 signature,
                 nonce,
-                encryption_public_key: pubKey
+                encryption_public_key: pubKey,
+                username: account // Use ETH Address as default username for MetaMask users
             })
         });
 

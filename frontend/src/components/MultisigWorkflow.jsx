@@ -70,7 +70,7 @@ const SignerVerificationBadge = ({ signer, contentToVerify }) => {
     );
 };
 
-export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
+export default function MultisigWorkflow({ workflow, onClose, onUpdate, setUploadProgress, setStatusMessage }) {
     const { user, token, authType } = useAuth();
     const { encrypt: encryptPQC, decrypt: decryptPQC, sign: signPQC, pqcAccount, kyberKey } = usePQC();
     const { currentAccount } = useWeb3();
@@ -100,6 +100,11 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
     const fetchAndDecrypt = async () => {
         setIsViewing(true);
         setError('');
+        if (setUploadProgress) {
+            setUploadProgress(10);
+            setStatusMessage && setStatusMessage("Fetching...");
+        }
+
         try {
             if (workflow.secret_id === undefined) {
                 console.error("Workflow object missing secret_id", workflow);
@@ -159,13 +164,29 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                 throw new Error("You don't have access to the secret content yet.");
             }
 
+            if (setUploadProgress) {
+                setUploadProgress(40);
+                setStatusMessage && setStatusMessage("Decrypting...");
+            }
             // Decrypt
             await decryptContentValues(encryptedKeyToDecrypt, authType === 'trustkeys');
+
+            if (setUploadProgress) {
+                setUploadProgress(100);
+                setTimeout(() => {
+                    setUploadProgress(0);
+                    setStatusMessage && setStatusMessage('');
+                }, 500);
+            }
 
         } catch (e) {
             console.error("View failed", e);
             setError(e.message);
             setIsViewing(false);
+            if (setUploadProgress) {
+                setUploadProgress(0);
+                setStatusMessage && setStatusMessage('');
+            }
         }
     };
 
@@ -245,6 +266,11 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
     const handleSign = async () => {
         setIsSigning(true);
         setError('');
+        if (setUploadProgress) {
+            setUploadProgress(10);
+            setStatusMessage && setStatusMessage("Preparing...");
+        }
+
         try {
             // We need the raw content string that was signed? 
             // Actually, `signPQC` signs the `rawContent`.
@@ -293,6 +319,11 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
 
             if (!encryptedKey) throw new Error("Access denied: No key found for signing");
 
+            if (setUploadProgress) {
+                setUploadProgress(30);
+                setStatusMessage && setStatusMessage("Decrypting for signing...");
+            }
+
             let contentToSign;
             let signature;
             if (authType === 'trustkeys') {
@@ -307,6 +338,10 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                 console.log("handleSign: Decrypted Content Length (Original)", decryptedJson.length);
                 console.log("handleSign: Content to Sign Length (Canonical)", contentToSign.length);
 
+                if (setUploadProgress) {
+                    setUploadProgress(50);
+                    setStatusMessage && setStatusMessage("Signing...");
+                }
                 signature = await signPQC(contentToSign);
             } else {
                 contentToSign = await decryptData(encryptedKey, currentAccount);
@@ -320,6 +355,11 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                 // Assuming I will add the import or have it.
                 // Let's use window.ethereum directly? No, use helper.
                 const { signMessageEth } = await import('../utils/crypto');
+
+                if (setUploadProgress) {
+                    setUploadProgress(50);
+                    setStatusMessage && setStatusMessage("Signing with Wallet...");
+                }
                 signature = await signMessageEth(contentToSign);
             }
 
@@ -335,6 +375,10 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
             let recipientKeys = null;
             if (isLastSigner && workflow.recipients && workflow.recipients.length > 0) {
                 console.log("Last Signer identified. Generating keys for recipients...");
+                if (setUploadProgress) {
+                    setUploadProgress(70);
+                    setStatusMessage && setStatusMessage("Encrypting for recipients...");
+                }
                 recipientKeys = {};
                 for (const r of workflow.recipients) {
                     const pubKey = r.user?.encryption_public_key;
@@ -360,6 +404,11 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
                 }
             }
 
+            if (setUploadProgress) {
+                setUploadProgress(85);
+                setStatusMessage && setStatusMessage("Submitting...");
+            }
+
             const signRes = await fetch(`${API_ENDPOINTS.SECRETS.LIST}/../multisig/workflow/${workflow.id}/sign`, {
                 method: 'POST',
                 headers: {
@@ -375,6 +424,13 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
             if (signRes.ok) {
                 const updatedWf = await signRes.json();
                 onUpdate(updatedWf);
+                if (setUploadProgress) {
+                    setUploadProgress(100);
+                    setTimeout(() => {
+                        setUploadProgress(0);
+                        setStatusMessage && setStatusMessage('');
+                    }, 500);
+                }
                 // Don't close, let them see success
             } else {
                 const err = await signRes.json();
@@ -384,6 +440,10 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate }) {
         } catch (e) {
             console.error("Signing failed", e);
             setError(e.message);
+            if (setUploadProgress) {
+                setUploadProgress(0);
+                setStatusMessage && setStatusMessage('');
+            }
         } finally {
             setIsSigning(false);
         }

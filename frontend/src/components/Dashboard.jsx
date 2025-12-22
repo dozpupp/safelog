@@ -5,7 +5,7 @@ import { usePQC } from '../context/PQCContext';
 import { useTheme } from '../context/ThemeContext';
 import VaultManager from './VaultManager';
 import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypto';
-import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon, Shield, FileSignature, BadgeCheck, AlertTriangle, Workflow } from 'lucide-react';
+import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon, Shield, FileSignature, BadgeCheck, AlertTriangle, Workflow, Loader2 } from 'lucide-react';
 import MultisigCreateModal from './MultisigCreateModal';
 import MultisigWorkflow from './MultisigWorkflow';
 import { verifySignaturePQC } from '../utils/crypto';
@@ -300,8 +300,13 @@ export default function Dashboard() {
     const handleUpdateSecret = async (e) => {
         e.preventDefault();
         try {
+            setUploadProgress(20);
+            setStatusMessage("Encrypting...");
+
             // Re-encrypt
             const encrypted = await secureEncrypt(editContent, encryptionPublicKey);
+            setUploadProgress(60);
+            setStatusMessage("Saving...");
 
             const res = await fetch(API_ENDPOINTS.SECRETS.UPDATE(secretToEdit.id), {
                 method: 'PUT',
@@ -316,12 +321,18 @@ export default function Dashboard() {
             });
 
             if (res.ok) {
-                setIsEditModalOpen(false);
-                setSecretToEdit(null);
-                setDecryptedSecrets(prev => ({ ...prev, [secretToEdit.id]: editContent })); // Update local view
-                fetchSecrets();
+                setUploadProgress(100);
+                setTimeout(() => {
+                    setUploadProgress(0);
+                    setStatusMessage('');
+                    setIsEditModalOpen(false);
+                    setSecretToEdit(null);
+                    setDecryptedSecrets(prev => ({ ...prev, [secretToEdit.id]: editContent })); // Update local view
+                    fetchSecrets();
+                }, 500);
             }
         } catch (error) {
+            setUploadProgress(0);
             console.error("Update failed", error);
             alert("Update failed");
         }
@@ -331,38 +342,35 @@ export default function Dashboard() {
         if (!selectedUser || !secretToShare) return;
 
         try {
-            // 1. Decrypt the secret first (Smart Decrypt)
-            const encryptedSource = secretToShare.encrypted_data; // Original owner's data
-            // NOTE: If we are sharing a "Shared Secret" (re-sharing), logic might be different?
-            // For now, let's assume we are the owner sharing our own secret.
+            setUploadProgress(10);
+            setStatusMessage("Processing...");
 
+            // 1. Decrypt the secret first (Smart Decrypt)
+            const encryptedSource = secretToShare.encrypted_data;
+            setStatusMessage("Decrypting original...");
             const decrypted = await secureDecrypt(encryptedSource);
+            setUploadProgress(40);
 
             // 2. Re-encrypt with recipient's public key
+            setStatusMessage("Re-encrypting for recipient...");
             let reEncrypted;
             const recipientKey = selectedUser.encryption_public_key;
 
             if (recipientKey && recipientKey.length > 60) {
-                // Assume PQC Key (Dilithium/Kyber keys are long)
-                // Note: We use the hook here, assuming we are logged in as PQC user to share?
-                // Actually, if we are sharing TO a PQC user, we need to use PQC encrypt even if we are standard user?
-                // No, only PQC users have the TrustKeys extension typically. 
-                // But mixed usage is complex. Let's assume if target is PQC, we try to use encryptPQC.
                 try {
                     const res = await encryptPQC(decrypted, recipientKey);
                     reEncrypted = JSON.stringify(res);
                 } catch (e) {
-                    // If we are not PQC user but try to share to PQC, we might need window.trustkeys if available?
-                    // Or logic dictates we must be PQC to share to PQC?
-                    // For now, let's stick to using the context which wraps the window check.
                     throw new Error("TrustKeys required to share with this user.");
                 }
             } else {
                 // Standard MetaMask Encryption
                 reEncrypted = encryptData(decrypted, recipientKey);
             }
+            setUploadProgress(70);
 
             // 3. Share via API
+            setStatusMessage("Sharing...");
             const res = await fetch(API_ENDPOINTS.SECRETS.SHARE, {
                 method: 'POST',
                 headers: {
@@ -378,15 +386,22 @@ export default function Dashboard() {
             });
 
             if (res.ok) {
-                alert(`Secret shared with ${selectedUser.username || selectedUser.address}!`);
-                setIsShareModalOpen(false);
-                setSecretToShare(null);
-                setSelectedUser(null);
+                setUploadProgress(100);
+                setTimeout(() => {
+                    setUploadProgress(0);
+                    setStatusMessage('');
+                    alert(`Secret shared with ${selectedUser.username || selectedUser.address}!`);
+                    setIsShareModalOpen(false);
+                    setSecretToShare(null);
+                    setSelectedUser(null);
+                }, 500);
             } else {
+                setUploadProgress(0);
                 const errorData = await res.json();
                 alert(`Failed to share secret: ${errorData.detail || 'Unknown error'}`);
             }
         } catch (error) {
+            setUploadProgress(0);
             console.error("Failed to share secret", error);
             alert('Failed to share secret: ' + error.message);
         }
@@ -551,12 +566,17 @@ export default function Dashboard() {
 
     const handleVerify = async (docData) => {
         try {
+            setStatusMessage("Verifying Signature...");
+            setUploadProgress(20);
+
             if (!docData.signature || !docData.signerPublicKey) {
                 alert("Invalid document format for verification.");
+                setUploadProgress(0);
                 return;
             }
 
             const isValid = await verifySignaturePQC(docData.content, docData.signature, docData.signerPublicKey);
+            setUploadProgress(60);
 
             // Resolve User
             let signerInfo = null;
@@ -579,8 +599,16 @@ export default function Dashboard() {
                 publicKey: docData.signerPublicKey
             });
 
+            setUploadProgress(100);
+            setTimeout(() => {
+                setUploadProgress(0);
+                setStatusMessage('');
+            }, 500);
+
         } catch (e) {
             console.error("Verification failed", e);
+            setUploadProgress(0);
+            setStatusMessage('');
             alert("Verification error: " + e.message);
         }
     };
@@ -677,13 +705,29 @@ export default function Dashboard() {
 
     const handleDecrypt = async (item, isShared = false) => {
         try {
+            setStatusMessage("Decrypting...");
+            setUploadProgress(30);
+
+            // Artificial delay for UX perception
+            await new Promise(r => setTimeout(r, 300));
+
             const dataToDecrypt = isShared ? item.encrypted_key : item.encrypted_data;
             const decrypted = await secureDecrypt(dataToDecrypt);
 
+            setUploadProgress(70);
+
             const key = isShared ? `shared_${item.id}` : item.id;
             setDecryptedSecrets(prev => ({ ...prev, [key]: decrypted }));
+
+            setUploadProgress(100);
+            setTimeout(() => {
+                setUploadProgress(0);
+                setStatusMessage('');
+            }, 500);
         } catch (error) {
             console.error("Decryption failed", error);
+            setUploadProgress(0);
+            setStatusMessage('');
             alert("Decryption failed. Ensure you have the right key.");
         }
     };
@@ -1145,20 +1189,7 @@ export default function Dashboard() {
                                     </div>
                                 )}
 
-                                {uploadProgress > 0 && (
-                                    <div className="space-y-1">
-                                        <div className="flex justify-between text-xs text-slate-500">
-                                            <span>{statusMessage}</span>
-                                            <span>{uploadProgress}%</span>
-                                        </div>
-                                        <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full bg-indigo-600 transition-all duration-300"
-                                                style={{ width: `${uploadProgress}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                )}
+
 
                                 <div className="flex justify-end gap-3 pt-2">
                                     <button
@@ -1366,6 +1397,8 @@ export default function Dashboard() {
                     <MultisigWorkflow
                         workflow={selectedWorkflow}
                         onClose={() => setSelectedWorkflow(null)}
+                        setUploadProgress={setUploadProgress}
+                        setStatusMessage={setStatusMessage}
                         onUpdate={(updated) => {
                             setWorkflows(prev => prev.map(w => w.id === updated.id ? updated : w));
                             setSelectedWorkflow(updated); // Update the active modal view
@@ -1376,6 +1409,25 @@ export default function Dashboard() {
                     />
                 )
             }
+
+            {/* Global Progress Bar (Toast Style) */}
+            {uploadProgress > 0 && (
+                <div className="fixed bottom-6 right-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-4 w-80 z-[100] animate-in slide-in-from-bottom-5">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                            {statusMessage || "Processing..."}
+                        </span>
+                        <span className="text-xs text-slate-500 font-mono">{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-300 ease-out"
+                            style={{ width: `${uploadProgress}%` }}
+                        />
+                    </div>
+                </div>
+            )}
         </div >
     );
 }

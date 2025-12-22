@@ -76,7 +76,7 @@ export const PQCProvider = ({ children }) => {
         setModalConfig({ ...modalConfig, isOpen: false, resolve: null, reject: null });
     };
 
-    const performServerLogin = async (accountId, encryptionKey, signFn) => {
+    const performServerLogin = async (accountId, encryptionKey, signFn, username = null) => {
         // 1. Get Nonce
         const nonceRes = await fetch(API_ENDPOINTS.AUTH.NONCE(accountId));
         if (!nonceRes.ok) throw new Error("Failed to fetch nonce");
@@ -94,7 +94,8 @@ export const PQCProvider = ({ children }) => {
                 address: accountId,
                 signature,
                 nonce,
-                encryption_public_key: encryptionKey
+                encryption_public_key: encryptionKey,
+                username: username // Send preferred username
             })
         });
 
@@ -127,7 +128,7 @@ export const PQCProvider = ({ children }) => {
         setPqcAccount(accountId);
         setKyberKey(encryptionKey);
 
-        return performServerLogin(accountId, encryptionKey, (msg) => window.trustkeys.sign(msg));
+        return performServerLogin(accountId, encryptionKey, (msg) => window.trustkeys.sign(msg), tkAccount.name);
     };
 
     const loginLocalVault = async (password) => {
@@ -142,7 +143,7 @@ export const PQCProvider = ({ children }) => {
         setKyberKey(encryptionKey);
 
         // Pass known password
-        return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password));
+        return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password), account.name);
     };
 
     const createLocalVault = async (name, password) => {
@@ -155,7 +156,7 @@ export const PQCProvider = ({ children }) => {
         setPqcAccount(accountId);
         setKyberKey(encryptionKey);
 
-        return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password));
+        return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password), name);
     };
 
     const encrypt = async (content, publicKey) => {
@@ -215,13 +216,9 @@ export const PQCProvider = ({ children }) => {
         setPqcAccount(accountId);
         setKyberKey(encryptionKey);
 
-        try {
-            authLogout();
-            await performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password));
-        } catch (e) {
-            console.error("PQCContext: Auto-login failed after switch", e);
-            throw new Error("Switched account but login failed: " + e.message);
-        }
+        authLogout();
+        // explicit logout forces user to re-login with new identity attempt
+
 
         return account;
     };

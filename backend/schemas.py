@@ -78,6 +78,7 @@ class LoginRequest(BaseModel):
     signature: str = Field(..., max_length=20000)
     nonce: str = Field(..., max_length=200)
     encryption_public_key: Optional[str] = Field(None, max_length=20000)
+    username: Optional[str] = Field(None, max_length=200)
 
 class RecoveryShareStore(BaseModel):
     token: str = Field(..., max_length=50000) # Google Tokens can be long-ish
