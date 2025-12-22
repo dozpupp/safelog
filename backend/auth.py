@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # --- PQC Service Config ---
-PQC_SERVICE_URL = "http://127.0.0.1:3002"
+PQC_SERVICE_URL = os.getenv("PQC_SERVICE_URL", "http://127.0.0.1:3002")
 _SERVER_PUBLIC_KEY = None
 
 def get_server_public_key():

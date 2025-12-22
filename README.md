@@ -165,6 +165,7 @@ Safelog implements a robust **Zero-Trust Multisignature** system designed for hi
  - **backend/.env**:
    - `SAFELOG_SECRET_KEY`: **Mandatory**. Used to deterministically generate server PQC keys.
    - `PQC_SHARED_SECRET`: **Mandatory**. Shared secret / API Key for authenticating the PQC Microservice.
+   - `PQC_SERVICE_URL`: **Optional**. URL of the PQC Microservice (default: `http://127.0.0.1:3002`).
    - `ALLOWED_ORIGINS`: CORS settings (default includes localhost).
    - `GOOGLE_CLIENT_ID`: (Disabled) Previously used for MPC Recovery.
  
@@ -177,8 +178,9 @@ Safelog implements a robust **Zero-Trust Multisignature** system designed for hi
  
  ```nginx
  http {
-     client_header_buffer_size 4k;
-     large_client_header_buffers 4 16k;
+    client_header_buffer_size 4k;
+    large_client_header_buffers 4 16k;
+    client_max_body_size 64M; # Increased to support large attached PQC signatures
  }
  ```
 

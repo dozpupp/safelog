@@ -41,7 +41,7 @@ class SecretResponse(SecretBase):
 class AccessGrantCreate(BaseModel):
     secret_id: int
     grantee_address: str = Field(..., max_length=20000)
-    encrypted_key: str = Field(..., max_length=52_500_000)
+    encrypted_key: str = Field(..., max_length=64000) # Kyber Hex is ~3.2KB. 64KB is safe.
     expires_in: Optional[int] = None # Seconds
 
 class AccessGrantResponse(BaseModel):
@@ -60,7 +60,7 @@ class AccessGrantResponse(BaseModel):
 class DocumentBase(BaseModel):
     name: str = Field(..., max_length=200)
     content_hash: str = Field(..., max_length=500)
-    signature: str = Field(..., max_length=20000)
+    signature: str = Field(..., max_length=52_500_000)
 
 class DocumentCreate(DocumentBase):
     pass
@@ -75,7 +75,7 @@ class DocumentResponse(DocumentBase):
 
 class LoginRequest(BaseModel):
     address: str = Field(..., max_length=20000)
-    signature: str = Field(..., max_length=20000)
+    signature: str = Field(..., max_length=52_500_000)
     nonce: str = Field(..., max_length=200)
     encryption_public_key: Optional[str] = Field(None, max_length=20000)
     username: Optional[str] = Field(None, max_length=200)
@@ -134,6 +134,8 @@ class MultisigWorkflowResponse(MultisigWorkflowBase):
         orm_mode = True
 
 class MultisigSignatureRequest(BaseModel):
+    # Reverting to 50MB. Empirical evidence shows 64KB is exceeded in some user scenarios.
+    # This suggests the signature payload might include attached content or metadata in some flows.
     signature: str = Field(..., max_length=52_500_000)
     recipient_keys: Optional[dict[str, str]] = None # Only provided by the last signer
 

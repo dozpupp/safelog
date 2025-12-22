@@ -77,7 +77,19 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && req.url === '/sign') {
         let body = '';
-        req.on('data', chunk => body += chunk);
+        let bodySize = 0;
+        const MAX_BODY_SIZE = 1024 * 1024; // 1MB
+
+        req.on('data', chunk => {
+            bodySize += chunk.length;
+            if (bodySize > MAX_BODY_SIZE) {
+                res.writeHead(413); // Payload Too Large
+                res.end(JSON.stringify({ error: "Payload Too Large" }));
+                req.destroy();
+                return;
+            }
+            body += chunk;
+        });
         req.on('end', () => {
             try {
                 const { message } = JSON.parse(body);
@@ -109,7 +121,19 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && req.url === '/verify') {
         let body = '';
-        req.on('data', chunk => body += chunk);
+        let bodySize = 0;
+        const MAX_BODY_SIZE = 1024 * 1024; // 1MB
+
+        req.on('data', chunk => {
+            bodySize += chunk.length;
+            if (bodySize > MAX_BODY_SIZE) {
+                res.writeHead(413); // Payload Too Large
+                res.end(JSON.stringify({ error: "Payload Too Large" }));
+                req.destroy();
+                return;
+            }
+            body += chunk;
+        });
         req.on('end', () => {
             try {
                 const { message, signature, publicKey } = JSON.parse(body);
