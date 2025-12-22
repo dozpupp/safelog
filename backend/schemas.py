@@ -149,6 +149,7 @@ class MessageCreate(MessageBase):
 class MessageResponse(MessageBase):
     id: int
     sender_address: str
+    is_read: bool = False
     created_at: datetime
     sender: Optional[UserResponse]
     recipient: Optional[UserResponse]
@@ -159,6 +160,7 @@ class MessageResponse(MessageBase):
 class ConversationResponse(BaseModel):
     user: UserResponse
     last_message: MessageResponse
+    unread_count: int = 0
 
     class Config:
         orm_mode = True

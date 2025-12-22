@@ -1,16 +1,18 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordBearer
 
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, case
 from typing import List
 from datetime import datetime, timezone, timedelta
 
 from database import engine, get_db, Base
 import models, schemas, auth
+from websocket_manager import manager
 
 import os
+import json
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -582,7 +584,7 @@ def sign_multisig_workflow(workflow_id: int, sig_req: schemas.MultisigSignatureR
 # ---------------------------------------------------------------------
 
 @app.post("/messages", response_model=schemas.MessageResponse)
-def send_message(msg: schemas.MessageCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def send_message(msg: schemas.MessageCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     # Verify recipient exists
     recipient_addr = msg.recipient_address.lower()
     recipient = db.query(models.User).filter(models.User.address == recipient_addr).first()
@@ -593,17 +595,36 @@ def send_message(msg: schemas.MessageCreate, current_user: models.User = Depends
     new_msg = models.Message(
         sender_address=current_user.address,
         recipient_address=recipient_addr, # Store lowercase
-        content=msg.content
+        content=msg.content,
+        is_read=False
     )
     db.add(new_msg)
     db.commit()
     db.refresh(new_msg)
+    
+    # Real-time Broadcast
+    msg_data = {
+        "type": "NEW_MESSAGE",
+        "message": {
+            "id": new_msg.id,
+            "sender_address": new_msg.sender_address,
+            "recipient_address": new_msg.recipient_address,
+            "content": new_msg.content,
+            "is_read": new_msg.is_read,
+            "created_at": new_msg.created_at.isoformat()
+        }
+    }
+    
+    # Send to Recipient
+    await manager.send_personal_message(msg_data, recipient_addr)
+    # Send to Sender (for sync across their devices)
+    await manager.send_personal_message(msg_data, current_user.address)
+
     return new_msg
 
 @app.get("/messages/conversations", response_model=List[schemas.ConversationResponse])
 def get_conversations(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     # Fetch all messages involving me
-    # Note: We rely on stored addresses being lowercase now, but for robustness we could use func.lower
     all_msgs = db.query(models.Message).filter(
         or_(
             models.Message.sender_address == current_user.address,
@@ -618,9 +639,17 @@ def get_conversations(current_user: models.User = Depends(get_current_user), db:
             # Fetch partner user object
             partner = db.query(models.User).filter(models.User.address == partner_addr).first()
             if partner:
+                # Calculate unread count (messages FROM partner TO me which are NOT read)
+                unread = db.query(models.Message).filter(
+                    models.Message.sender_address == partner_addr,
+                    models.Message.recipient_address == current_user.address,
+                    models.Message.is_read == False
+                ).count()
+
                 conversations[partner_addr] = {
                     "user": partner,
-                    "last_message": m
+                    "last_message": m,
+                    "unread_count": unread
                 }
     
     return list(conversations.values())
@@ -638,3 +667,53 @@ def get_message_history(req: schemas.HistoryRequest, current_user: models.User =
     
     return msgs
 
+
+@app.post("/messages/mark-read/{partner_address}")
+def mark_read(partner_address: str, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    partner_addr = partner_address.lower()
+    
+    # Mark all messages sent BY partner TO me as read
+    db.query(models.Message).filter(
+        models.Message.sender_address == partner_addr,
+        models.Message.recipient_address == current_user.address,
+        models.Message.is_read == False
+    ).update({"is_read": True})
+    
+    db.commit()
+    return {"status": "ok"}
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    
+    # Wait for authentication message
+    try:
+        data = await websocket.receive_text()
+        auth_data = json.loads(data)
+        
+        if auth_data.get("type") != "AUTH":
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+            
+        token = auth_data.get("token")
+        if not token:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        payload = auth.decode_access_token(token)
+        if not payload or not payload.get("sub"):
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+            
+        user_address = payload.get("sub").lower()
+        
+        await manager.connect(websocket, user_address)
+        try:
+            while True:
+                await websocket.receive_text()
+                # We can handle client messages here (e.g. typing indicators)
+        except WebSocketDisconnect:
+            manager.disconnect(websocket, user_address)
+            
+    except Exception:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)

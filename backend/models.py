@@ -113,6 +113,7 @@ class Message(Base):
     sender_address = Column(String, ForeignKey("users.address"))
     recipient_address = Column(String, ForeignKey("users.address"))
     content = Column(Text) # Encrypted Blob
+    is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     sender = relationship("User", foreign_keys=[sender_address], back_populates="sent_messages")

@@ -6,12 +6,15 @@ import { Send, Lock, Shield, User, Loader2, ArrowLeft, MessageSquare, Plus, Sear
 import API_ENDPOINTS from '../config';
 
 export default function Messenger() {
-    const { user, token } = useAuth();
+    const { user, token, authType } = useAuth();
     const { encrypt, decrypt, decryptMany, pqcAccount } = usePQC();
     const { isRetro } = useTheme();
 
     const [conversations, setConversations] = useState([]);
     const [activeConversation, setActiveConversation] = useState(null); // { user, messages: [] }
+    const activeConversationRef = useRef(null);
+    useEffect(() => { activeConversationRef.current = activeConversation; }, [activeConversation]);
+
     const [loading, setLoading] = useState(true);
     const [messagesLoading, setMessagesLoading] = useState(false);
     const [inputText, setInputText] = useState('');
@@ -33,6 +36,101 @@ export default function Messenger() {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [activeConversation?.messages]);
+
+    // WebSocket Integration
+    useEffect(() => {
+        if (!user || authType !== 'trustkeys') return;
+
+        const url = API_ENDPOINTS.BASE.replace('http', 'ws');
+        const wsUrl = `${url}/ws`; // No token in URL to avoid length limits
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            // Send Auth Token as first message
+            ws.send(JSON.stringify({
+                type: 'AUTH',
+                token: token
+            }));
+        };
+
+        ws.onmessage = async (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'NEW_MESSAGE') {
+                const msg = data.message;
+                const senderAddr = msg.sender_address.toLowerCase();
+                const recipientAddr = msg.recipient_address.toLowerCase();
+                const myAddr = user.address.toLowerCase();
+
+                // Determine Partner Address
+                const partnerAddr = (senderAddr === myAddr) ? recipientAddr : senderAddr;
+
+                // 1. Skip Auto-Decrypt to avoid popping up vault unexpectedly
+                // User must click to decrypt
+                const plainText = null;
+
+                const decryptedMsg = { ...msg, plainText };
+
+                // 2. Update Active Conversation (if matching)
+                const currentActive = activeConversationRef.current;
+
+                // We verify partner match using Ref (to know if we are in the right chat)
+                if (currentActive && currentActive.user.address.toLowerCase() === partnerAddr) {
+                    setActiveConversation(prev => {
+                        // Double-check active verification inside state update to be safe
+                        if (!prev || prev.user.address.toLowerCase() !== partnerAddr) return prev;
+
+                        // Check de-duplication against the FRESH state
+                        const exists = prev.messages.find(m => m.id === msg.id);
+                        if (exists) return prev; // Already exists, do nothing
+
+                        return {
+                            ...prev,
+                            messages: [...prev.messages, decryptedMsg]
+                        };
+                    });
+
+                    // Mark Read (since we are viewing it)
+                    // We do this outside the state update to avoid side-effects in reducer
+                    if (senderAddr !== myAddr) {
+                        fetch(`${API_ENDPOINTS.BASE}/messages/mark-read/${senderAddr}`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                    }
+                }
+
+                // 3. Update Conversation List (Red Dot & Last Message)
+                setConversations(prev => {
+                    const existing = prev.find(c => c.user.address.toLowerCase() === partnerAddr);
+                    const otherConvos = prev.filter(c => c.user.address.toLowerCase() !== partnerAddr);
+
+                    let newConvo = existing ? { ...existing } : {
+                        user: { address: partnerAddr, username: "New Message" },
+                        last_message: msg,
+                        unread_count: 0
+                    };
+
+                    // Update Last Message
+                    newConvo.last_message = msg;
+
+                    // Increment Unread Count?
+                    // Only if it's incoming AND we are NOT currently viewing this specific chat
+                    const isViewing = currentActive && currentActive.user.address.toLowerCase() === partnerAddr;
+
+                    if (senderAddr !== myAddr && !isViewing) {
+                        newConvo.unread_count = (newConvo.unread_count || 0) + 1;
+                    } else if (isViewing) {
+                        // Reset if we are viewing it
+                        newConvo.unread_count = 0;
+                    }
+
+                    return [newConvo, ...otherConvos];
+                });
+            }
+        };
+
+        return () => ws.close();
+    }, [user, token, authType]); // Only re-run on auth change. relies on ref for active convo state.
 
     const fetchConversations = async () => {
         try {
@@ -154,10 +252,20 @@ export default function Messenger() {
                 const newMsg = await res.json();
                 // Add to UI immediately
                 const uiMsg = { ...newMsg, plainText: inputText };
-                setActiveConversation(prev => ({
-                    ...prev,
-                    messages: [...prev.messages, uiMsg]
-                }));
+                setActiveConversation(prev => {
+                    const exists = prev.messages.find(m => m.id === newMsg.id);
+                    if (exists) {
+                        // Optimistic update: Replace the existing (likely encrypted from WS) with clear text version
+                        return {
+                            ...prev,
+                            messages: prev.messages.map(m => m.id === newMsg.id ? uiMsg : m)
+                        };
+                    }
+                    return {
+                        ...prev,
+                        messages: [...prev.messages, uiMsg]
+                    };
+                });
                 setInputText('');
                 // Update conversation list sort?
                 fetchConversations();
@@ -202,6 +310,31 @@ export default function Messenger() {
         setSearchQuery('');
     };
 
+    const handleManualDecrypt = async (msg) => {
+        try {
+            const payload = JSON.parse(msg.content);
+            let blob = payload;
+            if (payload.recipient && payload.sender) {
+                // Double Encrypted
+                blob = (msg.sender_address === user.address) ? payload.sender : payload.recipient;
+            }
+
+            // Trigger Decrypt (Prompts PQC Password if needed)
+            const plainText = await decrypt(blob);
+
+            // Update State
+            setActiveConversation(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    messages: prev.messages.map(m => m.id === msg.id ? { ...m, plainText } : m)
+                };
+            });
+        } catch (e) {
+            console.error("Manual Decrypt Failed", e);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full">
@@ -233,18 +366,68 @@ export default function Messenger() {
                         conversations.map(c => (
                             <button
                                 key={c.user.address}
-                                onClick={() => loadConversation(c.user)}
-                                className={`w-full p-4 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800 flex items-center gap-3 ${activeConversation?.user.address === c.user.address ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}
+                                onClick={() => {
+                                    loadConversation(c.user);
+                                    // Mark Read Logic
+                                    if (c.unread_count > 0) {
+                                        setConversations(prev => prev.map(convo =>
+                                            convo.user.address === c.user.address ? { ...convo, unread_count: 0 } : convo
+                                        ));
+                                        fetch(`${API_ENDPOINTS.BASE}/messages/mark-read/${c.user.address}`, {
+                                            method: 'POST',
+                                            headers: { 'Authorization': `Bearer ${token}` }
+                                        });
+                                    }
+                                }}
+                                className={`w-full p-3 mb-1 rounded-xl text-left transition-all flex items-center gap-3 relative overflow-hidden group ${activeConversation?.user.address === c.user.address
+                                    ? 'bg-indigo-600 shadow-md shadow-indigo-500/20'
+                                    : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }`}
                             >
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shrink-0">
-                                    {(c.user.username || c.user.address).substring(0, 1).toUpperCase()}
-                                </div>
-                                <div className="overflow-hidden">
-                                    <div className="font-medium text-slate-900 dark:text-white truncate">
-                                        {c.user.username || `${c.user.address.substring(0, 6)}...`}
+                                <div className="relative shrink-0">
+                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold shadow-sm transition-transform group-hover:scale-105 ${activeConversation?.user.address === c.user.address
+                                        ? 'bg-white/20 text-white backdrop-blur-sm'
+                                        : 'bg-gradient-to-br from-indigo-500 to-purple-500 text-white'
+                                        }`}>
+                                        {(c.user.username || c.user.address).substring(0, 1).toUpperCase()}
                                     </div>
-                                    <div className="text-xs text-slate-500 truncate flex items-center gap-1">
-                                        <Lock className="w-3 h-3" /> Encrypted Message
+                                    {/* Unread Badge */}
+                                    {c.unread_count > 0 && (
+                                        <div className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center animate-in zoom-in">
+                                            <span className="text-[10px] font-bold text-white leading-none">
+                                                {c.unread_count > 9 ? '9+' : c.unread_count}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex-1 overflow-hidden">
+                                    <div className="flex justify-between items-center mb-0.5">
+                                        <span className={`font-semibold truncate text-sm ${activeConversation?.user.address === c.user.address
+                                            ? 'text-white'
+                                            : 'text-slate-900 dark:text-white'
+                                            }`}>
+                                            {c.user.username || `${c.user.address.substring(0, 8)}...`}
+                                        </span>
+                                        {c.last_message && (
+                                            <span className={`text-[10px] ${activeConversation?.user.address === c.user.address
+                                                ? 'text-indigo-200'
+                                                : 'text-slate-400'
+                                                }`}>
+                                                {new Date(c.last_message.created_at).toLocaleDateString()}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className={`text-xs truncate flex items-center gap-1 ${activeConversation?.user.address === c.user.address
+                                        ? 'text-indigo-100'
+                                        : c.unread_count > 0 ? 'text-slate-900 dark:text-white font-semibold' : 'text-slate-500'
+                                        }`}>
+                                        {c.last_message?.plainText ? (
+                                            <span className="truncate">{c.last_message.plainText}</span>
+                                        ) : (
+                                            <span className="flex items-center gap-1 opacity-80">
+                                                <Lock className="w-3 h-3" /> Encrypted Message
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </button>
@@ -290,12 +473,21 @@ export default function Messenger() {
                                     return (
                                         <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                                             <div className={`
-                                                max-w-[80%] rounded-2xl px-4 py-3 shadow-sm
+                                                max-w-[80%] rounded-2xl px-4 py-3 shadow-sm transition-all
                                                 ${isMe
                                                     ? 'bg-indigo-600 text-white rounded-br-none'
                                                     : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white rounded-bl-none border border-slate-200 dark:border-slate-700'}
                                             `}>
-                                                <p className="text-sm">{msg.plainText}</p>
+                                                {msg.plainText ? (
+                                                    <p className="text-sm">{msg.plainText}</p>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handleManualDecrypt(msg)}
+                                                        className={`flex items-center gap-2 text-sm font-semibold px-2 py-1 rounded bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-colors ${isMe ? 'text-white' : 'text-indigo-500 dark:text-indigo-400'}`}
+                                                    >
+                                                        <Lock className="w-4 h-4" /> Click to Decrypt
+                                                    </button>
+                                                )}
                                                 <div className={`text-[10px] mt-1 opacity-70 ${isMe ? 'text-indigo-100' : 'text-slate-400'}`}>
                                                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </div>
