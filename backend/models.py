@@ -105,9 +105,24 @@ class MultisigWorkflowRecipient(Base):
     workflow = relationship("MultisigWorkflow", back_populates="recipients")
     user = relationship("User")
 
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_address = Column(String, ForeignKey("users.address"))
+    recipient_address = Column(String, ForeignKey("users.address"))
+    content = Column(Text) # Encrypted Blob
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    sender = relationship("User", foreign_keys=[sender_address], back_populates="sent_messages")
+    recipient = relationship("User", foreign_keys=[recipient_address], back_populates="received_messages")
+
 # Update User relationship
 User.documents = relationship("Document", back_populates="owner")
 User.workflows = relationship("MultisigWorkflow", back_populates="owner")
+User.sent_messages = relationship("Message", foreign_keys=[Message.sender_address], back_populates="sender")
+User.received_messages = relationship("Message", foreign_keys=[Message.recipient_address], back_populates="recipient")
 
 __tablename__ = "recovery_shares"
 

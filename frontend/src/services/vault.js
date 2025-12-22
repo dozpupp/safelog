@@ -261,6 +261,27 @@ class VaultService {
         // 3. DISCARD
         return plaintext;
     }
+
+    async decryptMany(encryptedItems, password) {
+        if (this.isLocked) throw new Error("Vault locked");
+
+        // 1. DECRYPT VAULT ONCE
+        const fullVault = await this._getFullVault(password);
+        const account = fullVault.accounts.find(a => a.id === fullVault.activeAccountId);
+
+        if (!account) throw new Error("Active account not found in vault");
+
+        // 2. DECRYPT ALL MESSAGES
+        // We catch errors per message so one failure doesn't break all
+        return await Promise.all(encryptedItems.map(async (item) => {
+            try {
+                return await decryptMessagePQC(item, account.kyber.privateKey);
+            } catch (e) {
+                console.error("Failed to decrypt message:", e);
+                return "Error: Decryption Failed";
+            }
+        }));
+    }
 }
 
 export const vaultService = new VaultService();

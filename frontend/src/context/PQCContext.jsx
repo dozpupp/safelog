@@ -198,6 +198,26 @@ export const PQCProvider = ({ children }) => {
         throw new Error("PQC Provider not ready (Locked or Missing)");
     };
 
+    const decryptMany = async (encryptedObjects) => {
+        if (isExtensionAvailable && window.trustkeys) {
+            // Extension sequential fallback (or assume potential future batch support)
+            const results = [];
+            for (const obj of encryptedObjects) {
+                try {
+                    results.push(await window.trustkeys.decrypt(obj));
+                } catch (e) {
+                    console.error("Decrypt Error", e);
+                    results.push("Error: Decryption Failed");
+                }
+            }
+            return results;
+        } else if (!vaultService.isLocked) {
+            const password = await requestPassword(`Enter password to decrypt ${encryptedObjects.length} messages:`);
+            return await vaultService.decryptMany(encryptedObjects, password);
+        }
+        throw new Error("PQC Provider not ready (Locked or Missing)");
+    };
+
     const getVaultAccounts = () => vaultService.getAccounts();
 
     const addVaultAccount = async (name) => {
@@ -255,6 +275,7 @@ export const PQCProvider = ({ children }) => {
             createLocalVault,
             encrypt,
             decrypt,
+            decryptMany,
             sign,
             getVaultAccounts,
             addVaultAccount,

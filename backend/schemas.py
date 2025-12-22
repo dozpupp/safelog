@@ -139,6 +139,33 @@ class MultisigSignatureRequest(BaseModel):
     signature: str = Field(..., max_length=52_500_000)
     recipient_keys: Optional[dict[str, str]] = None # Only provided by the last signer
 
+class MessageBase(BaseModel):
+    recipient_address: str = Field(..., max_length=20000)
+    content: str = Field(..., max_length=52_500_000) # Encrypted Blob
+
+class MessageCreate(MessageBase):
+    pass
+
+class MessageResponse(MessageBase):
+    id: int
+    sender_address: str
+    created_at: datetime
+    sender: Optional[UserResponse]
+    recipient: Optional[UserResponse]
+
+    class Config:
+        orm_mode = True
+
+class ConversationResponse(BaseModel):
+    user: UserResponse
+    last_message: MessageResponse
+
+    class Config:
+        orm_mode = True
+
+class HistoryRequest(BaseModel):
+    partner_address: str
+
 class Token(BaseModel):
     access_token: str
     token_type: str

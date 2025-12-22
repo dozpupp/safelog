@@ -8,8 +8,10 @@ import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypt
 import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon, Shield, FileSignature, BadgeCheck, AlertTriangle, Workflow, Loader2 } from 'lucide-react';
 import MultisigCreateModal from './MultisigCreateModal';
 import MultisigWorkflow from './MultisigWorkflow';
+import Messenger from './Messenger';
 import { verifySignaturePQC } from '../utils/crypto';
 import API_ENDPOINTS from '../config';
+import { MessageSquare } from 'lucide-react';
 
 const DisplayField = ({ label, value }) => {
     const [copied, setCopied] = useState(false);
@@ -72,6 +74,9 @@ export default function Dashboard() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedUser, setSelectedUser] = useState(null);
     const [sharedSecrets, setSharedSecrets] = useState([]);
+
+    // View State
+    const [currentView, setCurrentView] = useState('secrets'); // 'secrets', 'messenger'
 
     // Multisig State
     const [workflows, setWorkflows] = useState([]);
@@ -810,570 +815,596 @@ export default function Dashboard() {
                 </div>
             </header>
 
+            {/* Navigation Tabs */}
+            <div className="max-w-5xl mx-auto mb-6 flex justify-center">
+                <nav className="flex items-center gap-1 bg-slate-200/50 dark:bg-slate-800/50 p-1 rounded-xl">
+                    <button
+                        onClick={() => setCurrentView('secrets')}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${currentView === 'secrets' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800'}`}
+                    >
+                        <Lock className="w-4 h-4" /> Secrets
+                    </button>
+                    <button
+                        onClick={() => setCurrentView('messenger')}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${currentView === 'messenger' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800'}`}
+                    >
+                        <MessageSquare className="w-4 h-4" /> Messages
+                    </button>
+                </nav>
+            </div>
+
             <main className="max-w-5xl mx-auto">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Your Secrets</h2>
-                    <div className="flex gap-2">
-                        <button
-                            onClick={() => setIsCreating(!isCreating)}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                        >
-                            <Plus className="w-4 h-4" />
-                            New Secret
-                        </button>
-                        <button
-                            onClick={() => setIsMultisigCreateOpen(true)}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                        >
-                            <Workflow className="w-4 h-4" />
-                            New Workflow
-                        </button>
+                {currentView === 'messenger' ? (
+                    <div className="h-[calc(100vh-200px)]">
+                        <Messenger />
                     </div>
-                </div>
-
-                {/* Pending Signatures Section */}
-                {workflows.some(w => w.status !== 'completed' && w.signers.find(s => s.user_address === user.address && !s.has_signed)) && (
-                    <div className="mb-8 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
-                        <h3 className="text-lg font-semibold text-amber-800 dark:text-amber-400 mb-4 flex items-center gap-2">
-                            <Shield className="w-5 h-5" /> Pending Signatures
-                        </h3>
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {workflows.filter(w => w.status !== 'completed' && w.signers.find(s => s.user_address === user.address && !s.has_signed)).map(w => (
-                                <div key={w.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-amber-200 dark:border-amber-800 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div className="font-medium text-slate-900 dark:text-white truncate" title={w.name}>{w.name}</div>
-                                        <div className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">Action Required</div>
-                                    </div>
-                                    <div className="text-sm text-slate-500 mb-4">
-                                        Requested by: {w.owner?.username || w.owner_address.substring(0, 8)}
-                                    </div>
-                                    <button
-                                        onClick={() => setSelectedWorkflow(w)}
-                                        className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors"
-                                    >
-                                        Review & Sign
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* My Workflows Section */}
-                {workflows.length > 0 && (
-                    <div className="mb-10">
-                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                            <Workflow className="w-5 h-5" /> Multisig Workflows
-                        </h3>
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {workflows.map(w => (
-                                <div key={w.id} onClick={() => setSelectedWorkflow(w)} className="cursor-pointer bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div className="font-medium text-slate-900 dark:text-white truncate" title={w.name}>{w.name}</div>
-                                        {w.status === 'completed' ? (
-                                            <div className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">Completed</div>
-                                        ) : (
-                                            <div className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full">Pending</div>
-                                        )}
-                                    </div>
-                                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mb-3 overflow-hidden">
-                                        <div
-                                            className={`h-full ${w.status === 'completed' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-                                            style={{ width: `${(w.signers.filter(s => s.has_signed).length / w.signers.length) * 100}%` }}
-                                        />
-                                    </div>
-                                    <div className="flex justify-between text-xs text-slate-500">
-                                        <span>{w.signers.filter(s => s.has_signed).length}/{w.signers.length} Signed</span>
-                                        <span>{new Date(w.created_at).toLocaleDateString()}</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {
-                    isProfileOpen && (
-                        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Edit Profile</h3>
-                                    <button onClick={() => setIsProfileOpen(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                                        <X className="w-5 h-5" />
-                                    </button>
-                                </div>
-
-                                <form onSubmit={handleUpdateProfile} className="space-y-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-400 mb-1">Username</label>
-                                        <input
-                                            type="text"
-                                            value={usernameInput}
-                                            onChange={(e) => setUsernameInput(e.target.value)}
-                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                            placeholder="Set a username"
-                                        />
-                                    </div>
-
-                                    <DisplayField
-                                        label={authType === 'trustkeys' ? "ML-DSA (Dilithium) / User ID" : "Wallet Address"}
-                                        value={currentDisplayAccount}
-                                    />
-
-                                    <DisplayField
-                                        label={authType === 'trustkeys' ? "ML-KEM (Kyber) / Encryption Key" : "Public Key"}
-                                        value={encryptionPublicKey}
-                                    />
-
-                                    <div className="flex justify-end gap-3 mt-6">
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsProfileOpen(false)}
-                                            className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            type="submit"
-                                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
-                                        >
-                                            Save Changes
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    )
-                }
-
-                {isShareModalOpen && (
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95 max-h-[85vh] flex flex-col">
-                            <div className="flex justify-between items-center mb-6 shrink-0">
-                                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Manage Access</h3>
-                                <button onClick={() => setIsShareModalOpen(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            <div className="mb-4 shrink-0">
-                                <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">Secret: <span className="text-slate-900 dark:text-white font-medium">{secretToShare?.name}</span></p>
-                            </div>
-
-                            <div className="overflow-y-auto flex-1 pr-2">
-                                {/* Access List - Visible at Top if exists */}
-                                <div className="mb-6">
-                                    <h4 className="text-sm font-medium text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-                                        <User className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                                        Who has access ({accessList.length})?
-                                    </h4>
-                                    <div className="space-y-2">
-                                        {accessList.length === 0 ? (
-                                            <div className="text-sm text-slate-500 italic p-3 bg-slate-50 dark:bg-slate-950/50 rounded-lg border border-slate-200 dark:border-slate-800/50">
-                                                No one yet. Only you have access.
-                                            </div>
-                                        ) : (
-                                            accessList.map(grant => (
-                                                <div key={grant.id} className="flex justify-between items-center p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700/50">
-                                                    <div className="min-w-0">
-                                                        <div className="flex items-center gap-2 mb-0.5">
-                                                            <User className="w-3 h-3 text-slate-400" />
-                                                            <p className="text-sm text-slate-900 dark:text-white font-medium truncate w-40">
-                                                                {grant.grantee?.username ? (
-                                                                    <span>{grant.grantee.username} <span className="text-slate-500 text-xs">({grant.grantee_address.slice(0, 6)}...)</span></span>
-                                                                ) : (
-                                                                    <span>{grant.grantee_address.slice(0, 10)}...{grant.grantee_address.slice(-4)}</span>
-                                                                )}
-                                                            </p>
-                                                        </div>
-                                                        {grant.expires_at ? (
-                                                            <p className="text-xs text-orange-400 flex items-center gap-1">
-                                                                <Clock className="w-3 h-3" /> Expires: {new Date(grant.expires_at).toLocaleString()}
-                                                            </p>
-                                                        ) : (
-                                                            <p className="text-xs text-emerald-400/70 flex items-center gap-1">
-                                                                <Check className="w-3 h-3" /> Permanent Details
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <button
-                                                        onClick={() => handleRevokeGrant(grant.id)}
-                                                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-                                                        title="Revoke Access"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="border-t border-slate-800 my-4"></div>
-
-                                {/* Add New Share */}
-                                <h4 className="text-sm font-medium text-slate-900 dark:text-white mb-3">Add Person</h4>
-                                <div className="mb-4">
-                                    <label className="block text-sm font-medium text-slate-400 mb-2">Search Users</label>
-                                    <div className="relative">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                                        <input
-                                            type="text"
-                                            value={searchQuery}
-                                            onChange={(e) => {
-                                                setSearchQuery(e.target.value);
-                                                searchUsers(e.target.value);
-                                            }}
-                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg pl-10 pr-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                            placeholder="Username or address..."
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* User Results */}
-                                {users.length > 0 && (
-                                    <div className="mb-4 border border-slate-200 dark:border-slate-800 rounded-lg p-2 bg-slate-50 dark:bg-slate-950 max-h-32 overflow-y-auto">
-                                        {users.map(u => (
-                                            <div
-                                                key={u.address}
-                                                onClick={() => setSelectedUser(u)}
-                                                className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedUser?.address === u.address ? 'bg-indigo-100 dark:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-500/30' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-                                            >
-                                                <span className="text-sm text-slate-900 dark:text-white">{u.username || u.address.slice(0, 10)}</span>
-                                                {selectedUser?.address === u.address && <Check className="w-3 h-3 text-indigo-400" />}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {hasMoreUsers && users.length > 0 && (
-                                    <button
-                                        onClick={loadNextUsers}
-                                        className="w-full text-center text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 py-2 border-t border-slate-200 dark:border-slate-800 mt-2 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
-                                    >
-                                        Next
-                                    </button>
-                                )}
-
-                                {/* Expiry / Timebomb */}
-                                <div className="mb-6">
-                                    <label className="block text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
-                                        <Clock className="w-3 h-3" /> Expiry (Timebomb)
-                                    </label>
-                                    <select
-                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none"
-                                        value={expiry}
-                                        onChange={(e) => setExpiry(Number(e.target.value))}
-                                    >
-                                        <option value={0}>Never expire</option>
-                                        <option value={300}>5 Minutes</option>
-                                        <option value={3600}>1 Hour</option>
-                                        <option value={86400}>1 Day</option>
-                                        <option value={604800}>1 Week</option>
-                                    </select>
-                                </div>
-
+                ) : (
+                    <>
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Your Secrets</h2>
+                            <div className="flex gap-2">
                                 <button
-                                    onClick={handleShareSecret}
-                                    disabled={!selectedUser}
-                                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed mb-2"
+                                    onClick={() => setIsCreating(!isCreating)}
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
                                 >
-                                    Share Secret
+                                    <Plus className="w-4 h-4" />
+                                    New Secret
+                                </button>
+                                <button
+                                    onClick={() => setIsMultisigCreateOpen(true)}
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                                >
+                                    <Workflow className="w-4 h-4" />
+                                    New Workflow
                                 </button>
                             </div>
                         </div>
-                    </div>
-                )}
 
-                {/* Edit Modal */}
-                {isEditModalOpen && (
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
-                            <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Edit Secret</h3>
-                            <form onSubmit={handleUpdateSecret} className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
-                                    <input
-                                        type="text"
-                                        value={editName}
-                                        onChange={(e) => setEditName(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Content</label>
-                                    <textarea
-                                        value={editContent}
-                                        onChange={(e) => setEditContent(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none h-24"
-                                    />
-                                </div>
-                                <div className="flex justify-end gap-3 px-0">
-                                    <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">Cancel</button>
-                                    <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg">Save</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
-
-                {/* Create Secret Modal Content - Partial Replacement for the Create UI */}
-                {isCreating && (
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
-                            <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Create New Secret</h3>
-                            <form onSubmit={handleCreateSecret} className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
-                                    <input
-                                        type="text"
-                                        value={newSecretName}
-                                        onChange={(e) => setNewSecretName(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                        placeholder="My Secret Document"
-                                    />
-                                </div>
-
-                                {/* Toggle Content Type */}
-                                <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                                    <button
-                                        type="button"
-                                        onClick={() => setContentType('text')}
-                                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${contentType === 'text' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                    >
-                                        Text
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setContentType('file')}
-                                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${contentType === 'file' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                    >
-                                        File
-                                    </button>
-                                </div>
-
-                                {contentType === 'text' ? (
-                                    <textarea
-                                        value={newSecretContent}
-                                        onChange={(e) => setNewSecretContent(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none h-32 resize-none"
-                                        placeholder="Enter secret content..."
-                                    />
-                                ) : (
-                                    <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-lg p-6 text-center hover:border-indigo-500 transition-colors cursor-pointer relative">
-                                        <input
-                                            type="file"
-                                            onChange={(e) => setSelectedFile(e.target.files[0])}
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                        />
-                                        <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                                        <p className="text-sm text-slate-500">
-                                            {selectedFile ? selectedFile.name : "Click to upload file"}
-                                        </p>
-                                        <p className="text-xs text-slate-400 mt-1">Max 5MB</p>
-                                    </div>
-                                )}
-
-                                {authType === 'trustkeys' && (
-                                    <div className="flex items-center gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
-                                        <div
-                                            onClick={() => setIsSigned(!isSigned)}
-                                            className={`w-5 h-5 rounded border border-indigo-400 flex items-center justify-center cursor-pointer transition-colors ${isSigned ? 'bg-indigo-600 border-indigo-600' : 'bg-transparent'}`}
-                                        >
-                                            {isSigned && <Check className="w-3.5 h-3.5 text-white" />}
+                        {/* Pending Signatures Section */}
+                        {workflows.some(w => w.status !== 'completed' && w.signers.find(s => s.user_address === user.address && !s.has_signed)) && (
+                            <div className="mb-8 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                                <h3 className="text-lg font-semibold text-amber-800 dark:text-amber-400 mb-4 flex items-center gap-2">
+                                    <Shield className="w-5 h-5" /> Pending Signatures
+                                </h3>
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    {workflows.filter(w => w.status !== 'completed' && w.signers.find(s => s.user_address === user.address && !s.has_signed)).map(w => (
+                                        <div key={w.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-amber-200 dark:border-amber-800 shadow-sm hover:shadow-md transition-shadow">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="font-medium text-slate-900 dark:text-white truncate" title={w.name}>{w.name}</div>
+                                                <div className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">Action Required</div>
+                                            </div>
+                                            <div className="text-sm text-slate-500 mb-4">
+                                                Requested by: {w.owner?.username || w.owner_address.substring(0, 8)}
+                                            </div>
+                                            <button
+                                                onClick={() => setSelectedWorkflow(w)}
+                                                className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors"
+                                            >
+                                                Review & Sign
+                                            </button>
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-medium text-indigo-900 dark:text-indigo-200 select-none cursor-pointer" onClick={() => setIsSigned(!isSigned)}>Sign Document</p>
-                                            <p className="text-xs text-indigo-600/70 dark:text-indigo-400/70">Digitally sign with your PQC Key</p>
-                                        </div>
-                                    </div>
-                                )}
-
-
-
-                                <div className="flex justify-end gap-3 pt-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsCreating(false)}
-                                        className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={uploadProgress > 0}
-                                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
-                                    >
-                                        {uploadProgress > 0 ? 'Processing...' : (isSigned ? 'Sign & Save' : 'Save Secret')}
-                                    </button>
+                                    ))}
                                 </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
+                            </div>
+                        )}
 
-                {
-                    loading ? (
-                        <div className="flex justify-center py-12">
-                            <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
-                        </div>
-                    ) : secrets.length === 0 ? (
-                        <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
-                            <p className="text-slate-500">No secrets found. Create one to get started.</p>
-                        </div>
-                    ) : (
-                        <div className="grid gap-4">
-                            {secrets.map(s => (
-                                <div
-                                    key={s.id}
-                                    style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
-                                    className="border rounded-xl p-5 flex flex-col sm:flex-row items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all gap-4 sm:gap-0"
-                                >
-                                    <div className="flex-1 w-full">
-                                        <div className="flex justify-between items-start mb-4">
+                        {/* My Workflows Section */}
+                        {workflows.length > 0 && (
+                            <div className="mb-10">
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                    <Workflow className="w-5 h-5" /> Multisig Workflows
+                                </h3>
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    {workflows.map(w => (
+                                        <div key={w.id} onClick={() => setSelectedWorkflow(w)} className="cursor-pointer bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="font-medium text-slate-900 dark:text-white truncate" title={w.name}>{w.name}</div>
+                                                {w.status === 'completed' ? (
+                                                    <div className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">Completed</div>
+                                                ) : (
+                                                    <div className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full">Pending</div>
+                                                )}
+                                            </div>
+                                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mb-3 overflow-hidden">
+                                                <div
+                                                    className={`h-full ${w.status === 'completed' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                                                    style={{ width: `${(w.signers.filter(s => s.has_signed).length / w.signers.length) * 100}%` }}
+                                                />
+                                            </div>
+                                            <div className="flex justify-between text-xs text-slate-500">
+                                                <span>{w.signers.filter(s => s.has_signed).length}/{w.signers.length} Signed</span>
+                                                <span>{new Date(w.created_at).toLocaleDateString()}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {
+                            isProfileOpen && (
+                                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
+                                        <div className="flex justify-between items-center mb-6">
+                                            <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Edit Profile</h3>
+                                            <button onClick={() => setIsProfileOpen(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
+                                                <X className="w-5 h-5" />
+                                            </button>
+                                        </div>
+
+                                        <form onSubmit={handleUpdateProfile} className="space-y-4">
                                             <div>
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <h3 className="font-semibold text-slate-900 dark:text-white">{s.name}</h3>
-                                                    {s.type === 'signed_document' && (
-                                                        <span className="text-[10px] uppercase font-bold text-indigo-500 bg-indigo-100 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded">Signed</span>
-                                                    )}
-                                                </div>
-                                                <p className="text-xs text-slate-500">Created: {new Date(s.created_at).toLocaleDateString()}</p>
+                                                <label className="block text-sm font-medium text-slate-400 mb-1">Username</label>
+                                                <input
+                                                    type="text"
+                                                    value={usernameInput}
+                                                    onChange={(e) => setUsernameInput(e.target.value)}
+                                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                                    placeholder="Set a username"
+                                                />
                                             </div>
-                                        </div>
 
-                                        {decryptedSecrets[s.id] ? (
-                                            <div className="mt-3 relative group">
-                                                {renderDecryptedContent(decryptedSecrets[s.id], s)}
-                                                <div className="flex justify-end gap-2 mt-3 opacity-10 transition-opacity group-hover:opacity-100">
-                                                    <button onClick={() => handleOpenShareModal(s)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg">
-                                                        <Share2 className="w-4 h-4" />
-                                                    </button>
-                                                    <button onClick={() => handleOpenEditModal(s)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg">
-                                                        <Edit2 className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="mt-auto pt-6 flex justify-center">
+                                            <DisplayField
+                                                label={authType === 'trustkeys' ? "ML-DSA (Dilithium) / User ID" : "Wallet Address"}
+                                                value={currentDisplayAccount}
+                                            />
+
+                                            <DisplayField
+                                                label={authType === 'trustkeys' ? "ML-KEM (Kyber) / Encryption Key" : "Public Key"}
+                                                value={encryptionPublicKey}
+                                            />
+
+                                            <div className="flex justify-end gap-3 mt-6">
                                                 <button
-                                                    onClick={() => handleDecrypt(s)}
-                                                    className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                                                    type="button"
+                                                    onClick={() => setIsProfileOpen(false)}
+                                                    className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                                                 >
-                                                    <Unlock className="w-4 h-4" /> Decrypt
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    type="submit"
+                                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                                                >
+                                                    Save Changes
                                                 </button>
                                             </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex items-center gap-2 ml-0 sm:ml-4 w-full sm:w-auto justify-end border-t sm:border-t-0 border-slate-100 dark:border-slate-800 pt-3 sm:pt-0 mt-2 sm:mt-0">
-                                        {!decryptedSecrets[s.id] && (
-                                            <button
-                                                onClick={() => handleDecrypt(s)}
-                                                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                                title="Decrypt"
-                                            >
-                                                <Unlock className="w-4 h-4" />
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={() => handleOpenShareModal(s)}
-                                            className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                            title="Manage Access & Share"
-                                        >
-                                            <User className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleOpenEditModal(s)}
-                                            className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                            title="Edit"
-                                        >
-                                            <Edit2 className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteSecret(s.id)}
-                                            className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
-                                            title="Delete"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        </form>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    )
-                }
+                            )
+                        }
 
-                <div className="mt-12 mb-6">
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Shared with You</h2>
-                </div>
+                        {isShareModalOpen && (
+                            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95 max-h-[85vh] flex flex-col">
+                                    <div className="flex justify-between items-center mb-6 shrink-0">
+                                        <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Manage Access</h3>
+                                        <button onClick={() => setIsShareModalOpen(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
+                                            <X className="w-5 h-5" />
+                                        </button>
+                                    </div>
 
-                {
-                    loading ? (
-                        <div className="flex justify-center py-12">
-                            <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
-                        </div>
-                    ) : sharedSecrets.length === 0 ? (
-                        <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
-                            <p className="text-slate-500">No secrets shared with you yet.</p>
-                        </div>
-                    ) : (
-                        <div className="grid gap-4">
-                            {sharedSecrets.map(grant => (
-                                <div
-                                    key={`shared-${grant.id}`}
-                                    style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
-                                    className="border rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all"
-                                >
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                                                <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                    <div className="mb-4 shrink-0">
+                                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">Secret: <span className="text-slate-900 dark:text-white font-medium">{secretToShare?.name}</span></p>
+                                    </div>
+
+                                    <div className="overflow-y-auto flex-1 pr-2">
+                                        {/* Access List - Visible at Top if exists */}
+                                        <div className="mb-6">
+                                            <h4 className="text-sm font-medium text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                                                <User className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                                Who has access ({accessList.length})?
+                                            </h4>
+                                            <div className="space-y-2">
+                                                {accessList.length === 0 ? (
+                                                    <div className="text-sm text-slate-500 italic p-3 bg-slate-50 dark:bg-slate-950/50 rounded-lg border border-slate-200 dark:border-slate-800/50">
+                                                        No one yet. Only you have access.
+                                                    </div>
+                                                ) : (
+                                                    accessList.map(grant => (
+                                                        <div key={grant.id} className="flex justify-between items-center p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700/50">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2 mb-0.5">
+                                                                    <User className="w-3 h-3 text-slate-400" />
+                                                                    <p className="text-sm text-slate-900 dark:text-white font-medium truncate w-40">
+                                                                        {grant.grantee?.username ? (
+                                                                            <span>{grant.grantee.username} <span className="text-slate-500 text-xs">({grant.grantee_address.slice(0, 6)}...)</span></span>
+                                                                        ) : (
+                                                                            <span>{grant.grantee_address.slice(0, 10)}...{grant.grantee_address.slice(-4)}</span>
+                                                                        )}
+                                                                    </p>
+                                                                </div>
+                                                                {grant.expires_at ? (
+                                                                    <p className="text-xs text-orange-400 flex items-center gap-1">
+                                                                        <Clock className="w-3 h-3" /> Expires: {new Date(grant.expires_at).toLocaleString()}
+                                                                    </p>
+                                                                ) : (
+                                                                    <p className="text-xs text-emerald-400/70 flex items-center gap-1">
+                                                                        <Check className="w-3 h-3" /> Permanent Details
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                            <button
+                                                                onClick={() => handleRevokeGrant(grant.id)}
+                                                                className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                                                                title="Revoke Access"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    ))
+                                                )}
                                             </div>
-                                            <h3 className="font-medium text-slate-900 dark:text-white">{grant.secret?.name || 'Unknown Secret'}</h3>
-                                            <span className="text-xs text-slate-500">
-                                                {new Date(grant.created_at).toLocaleDateString()}
-                                            </span>
-                                            <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-xs rounded-full">
-                                                Shared by {grant.secret?.owner?.username || grant.secret?.owner?.address?.slice(0, 6) + '...'}
-                                            </span>
                                         </div>
 
-                                        {decryptedSecrets[`shared_${grant.id}`] ? (
-                                            <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-200 font-mono text-sm break-all">
-                                                {renderDecryptedContent(decryptedSecrets[`shared_${grant.id}`])}
+                                        <div className="border-t border-slate-800 my-4"></div>
+
+                                        {/* Add New Share */}
+                                        <h4 className="text-sm font-medium text-slate-900 dark:text-white mb-3">Add Person</h4>
+                                        <div className="mb-4">
+                                            <label className="block text-sm font-medium text-slate-400 mb-2">Search Users</label>
+                                            <div className="relative">
+                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                                                <input
+                                                    type="text"
+                                                    value={searchQuery}
+                                                    onChange={(e) => {
+                                                        setSearchQuery(e.target.value);
+                                                        searchUsers(e.target.value);
+                                                    }}
+                                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg pl-10 pr-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                                    placeholder="Username or address..."
+                                                />
                                             </div>
-                                        ) : (
-                                            <div className="mt-3 text-sm text-slate-500 italic flex items-center gap-2">
-                                                <Lock className="w-3 h-3" />
-                                                Encrypted Content
+                                        </div>
+
+                                        {/* User Results */}
+                                        {users.length > 0 && (
+                                            <div className="mb-4 border border-slate-200 dark:border-slate-800 rounded-lg p-2 bg-slate-50 dark:bg-slate-950 max-h-32 overflow-y-auto">
+                                                {users.map(u => (
+                                                    <div
+                                                        key={u.address}
+                                                        onClick={() => setSelectedUser(u)}
+                                                        className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedUser?.address === u.address ? 'bg-indigo-100 dark:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-500/30' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                                                    >
+                                                        <span className="text-sm text-slate-900 dark:text-white">{u.username || u.address.slice(0, 10)}</span>
+                                                        {selectedUser?.address === u.address && <Check className="w-3 h-3 text-indigo-400" />}
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
-                                    </div>
 
-                                    <div className="flex items-center gap-2 ml-4">
-                                        {!decryptedSecrets[`shared_${grant.id}`] && (
+                                        {hasMoreUsers && users.length > 0 && (
                                             <button
-                                                onClick={() => handleDecrypt(grant, true)}
-                                                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                                title="Decrypt"
+                                                onClick={loadNextUsers}
+                                                className="w-full text-center text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 py-2 border-t border-slate-200 dark:border-slate-800 mt-2 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
                                             >
-                                                <Unlock className="w-4 h-4" />
+                                                Next
                                             </button>
                                         )}
+
+                                        {/* Expiry / Timebomb */}
+                                        <div className="mb-6">
+                                            <label className="block text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
+                                                <Clock className="w-3 h-3" /> Expiry (Timebomb)
+                                            </label>
+                                            <select
+                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none"
+                                                value={expiry}
+                                                onChange={(e) => setExpiry(Number(e.target.value))}
+                                            >
+                                                <option value={0}>Never expire</option>
+                                                <option value={300}>5 Minutes</option>
+                                                <option value={3600}>1 Hour</option>
+                                                <option value={86400}>1 Day</option>
+                                                <option value={604800}>1 Week</option>
+                                            </select>
+                                        </div>
+
                                         <button
-                                            onClick={() => handleRevokeGrant(grant.id)}
-                                            className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
-                                            title="Remove"
+                                            onClick={handleShareSecret}
+                                            disabled={!selectedUser}
+                                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed mb-2"
                                         >
-                                            <Trash2 className="w-4 h-4" />
+                                            Share Secret
                                         </button>
                                     </div>
                                 </div>
-                            ))}
+                            </div>
+                        )}
+
+                        {/* Edit Modal */}
+                        {isEditModalOpen && (
+                            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
+                                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Edit Secret</h3>
+                                    <form onSubmit={handleUpdateSecret} className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
+                                            <input
+                                                type="text"
+                                                value={editName}
+                                                onChange={(e) => setEditName(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-400 mb-1">Content</label>
+                                            <textarea
+                                                value={editContent}
+                                                onChange={(e) => setEditContent(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none h-24"
+                                            />
+                                        </div>
+                                        <div className="flex justify-end gap-3 px-0">
+                                            <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">Cancel</button>
+                                            <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg">Save</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Create Secret Modal Content - Partial Replacement for the Create UI */}
+                        {isCreating && (
+                            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
+                                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Create New Secret</h3>
+                                    <form onSubmit={handleCreateSecret} className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
+                                            <input
+                                                type="text"
+                                                value={newSecretName}
+                                                onChange={(e) => setNewSecretName(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                                placeholder="My Secret Document"
+                                            />
+                                        </div>
+
+                                        {/* Toggle Content Type */}
+                                        <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                            <button
+                                                type="button"
+                                                onClick={() => setContentType('text')}
+                                                className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${contentType === 'text' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                            >
+                                                Text
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setContentType('file')}
+                                                className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${contentType === 'file' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                            >
+                                                File
+                                            </button>
+                                        </div>
+
+                                        {contentType === 'text' ? (
+                                            <textarea
+                                                value={newSecretContent}
+                                                onChange={(e) => setNewSecretContent(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none h-32 resize-none"
+                                                placeholder="Enter secret content..."
+                                            />
+                                        ) : (
+                                            <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-lg p-6 text-center hover:border-indigo-500 transition-colors cursor-pointer relative">
+                                                <input
+                                                    type="file"
+                                                    onChange={(e) => setSelectedFile(e.target.files[0])}
+                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                />
+                                                <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                                                <p className="text-sm text-slate-500">
+                                                    {selectedFile ? selectedFile.name : "Click to upload file"}
+                                                </p>
+                                                <p className="text-xs text-slate-400 mt-1">Max 5MB</p>
+                                            </div>
+                                        )}
+
+                                        {authType === 'trustkeys' && (
+                                            <div className="flex items-center gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
+                                                <div
+                                                    onClick={() => setIsSigned(!isSigned)}
+                                                    className={`w-5 h-5 rounded border border-indigo-400 flex items-center justify-center cursor-pointer transition-colors ${isSigned ? 'bg-indigo-600 border-indigo-600' : 'bg-transparent'}`}
+                                                >
+                                                    {isSigned && <Check className="w-3.5 h-3.5 text-white" />}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-medium text-indigo-900 dark:text-indigo-200 select-none cursor-pointer" onClick={() => setIsSigned(!isSigned)}>Sign Document</p>
+                                                    <p className="text-xs text-indigo-600/70 dark:text-indigo-400/70">Digitally sign with your PQC Key</p>
+                                                </div>
+                                            </div>
+                                        )}
+
+
+
+                                        <div className="flex justify-end gap-3 pt-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsCreating(false)}
+                                                className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                disabled={uploadProgress > 0}
+                                                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
+                                            >
+                                                {uploadProgress > 0 ? 'Processing...' : (isSigned ? 'Sign & Save' : 'Save Secret')}
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {
+                            loading ? (
+                                <div className="flex justify-center py-12">
+                                    <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
+                                </div>
+                            ) : secrets.length === 0 ? (
+                                <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
+                                    <p className="text-slate-500">No secrets found. Create one to get started.</p>
+                                </div>
+                            ) : (
+                                <div className="grid gap-4">
+                                    {secrets.map(s => (
+                                        <div
+                                            key={s.id}
+                                            style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
+                                            className="border rounded-xl p-5 flex flex-col sm:flex-row items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all gap-4 sm:gap-0"
+                                        >
+                                            <div className="flex-1 w-full">
+                                                <div className="flex justify-between items-start mb-4">
+                                                    <div>
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <h3 className="font-semibold text-slate-900 dark:text-white">{s.name}</h3>
+                                                            {s.type === 'signed_document' && (
+                                                                <span className="text-[10px] uppercase font-bold text-indigo-500 bg-indigo-100 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded">Signed</span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs text-slate-500">Created: {new Date(s.created_at).toLocaleDateString()}</p>
+                                                    </div>
+                                                </div>
+
+                                                {decryptedSecrets[s.id] ? (
+                                                    <div className="mt-3 relative group">
+                                                        {renderDecryptedContent(decryptedSecrets[s.id], s)}
+                                                        <div className="flex justify-end gap-2 mt-3 opacity-10 transition-opacity group-hover:opacity-100">
+                                                            <button onClick={() => handleOpenShareModal(s)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg">
+                                                                <Share2 className="w-4 h-4" />
+                                                            </button>
+                                                            <button onClick={() => handleOpenEditModal(s)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg">
+                                                                <Edit2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="mt-auto pt-6 flex justify-center">
+                                                        <button
+                                                            onClick={() => handleDecrypt(s)}
+                                                            className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                                                        >
+                                                            <Unlock className="w-4 h-4" /> Decrypt
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2 ml-0 sm:ml-4 w-full sm:w-auto justify-end border-t sm:border-t-0 border-slate-100 dark:border-slate-800 pt-3 sm:pt-0 mt-2 sm:mt-0">
+                                                {!decryptedSecrets[s.id] && (
+                                                    <button
+                                                        onClick={() => handleDecrypt(s)}
+                                                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                                        title="Decrypt"
+                                                    >
+                                                        <Unlock className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => handleOpenShareModal(s)}
+                                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                                    title="Manage Access & Share"
+                                                >
+                                                    <User className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleOpenEditModal(s)}
+                                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                                    title="Edit"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteSecret(s.id)}
+                                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )
+                        }
+
+                        <div className="mt-12 mb-6">
+                            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Shared with You</h2>
                         </div>
-                    )
-                }
+
+                        {
+                            loading ? (
+                                <div className="flex justify-center py-12">
+                                    <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
+                                </div>
+                            ) : sharedSecrets.length === 0 ? (
+                                <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
+                                    <p className="text-slate-500">No secrets shared with you yet.</p>
+                                </div>
+                            ) : (
+                                <div className="grid gap-4">
+                                    {sharedSecrets.map(grant => (
+                                        <div
+                                            key={`shared-${grant.id}`}
+                                            style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
+                                            className="border rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all"
+                                        >
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                                        <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                                    </div>
+                                                    <h3 className="font-medium text-slate-900 dark:text-white">{grant.secret?.name || 'Unknown Secret'}</h3>
+                                                    <span className="text-xs text-slate-500">
+                                                        {new Date(grant.created_at).toLocaleDateString()}
+                                                    </span>
+                                                    <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-xs rounded-full">
+                                                        Shared by {grant.secret?.owner?.username || grant.secret?.owner?.address?.slice(0, 6) + '...'}
+                                                    </span>
+                                                </div>
+
+                                                {decryptedSecrets[`shared_${grant.id}`] ? (
+                                                    <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-200 font-mono text-sm break-all">
+                                                        {renderDecryptedContent(decryptedSecrets[`shared_${grant.id}`])}
+                                                    </div>
+                                                ) : (
+                                                    <div className="mt-3 text-sm text-slate-500 italic flex items-center gap-2">
+                                                        <Lock className="w-3 h-3" />
+                                                        Encrypted Content
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2 ml-4">
+                                                {!decryptedSecrets[`shared_${grant.id}`] && (
+                                                    <button
+                                                        onClick={() => handleDecrypt(grant, true)}
+                                                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                                        title="Decrypt"
+                                                    >
+                                                        <Unlock className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => handleRevokeGrant(grant.id)}
+                                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
+                                                    title="Remove"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )
+                        }
+                    </>
+                )}
             </main >
             {showVaultManager && (
                 <VaultManager onClose={() => setShowVaultManager(false)} />

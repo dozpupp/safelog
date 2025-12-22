@@ -1,6 +1,7 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 export const API_ENDPOINTS = {
+    BASE: API_BASE_URL,
     AUTH: {
         NONCE: (address) => `${API_BASE_URL}/auth/nonce/${address}`,
         LOGIN: `${API_BASE_URL}/auth/login`,

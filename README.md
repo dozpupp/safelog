@@ -16,6 +16,7 @@ A secure secret management and document signing application featuring **Quantum-
 - 🤝 **Secure Sharing** - Share encrypted secrets between any user type (Eth ↔ PQC).
 - ✍️ **Signed Documents** - Create, share, and verify digitally signed documents (Sign-then-Encrypt) to prove authorship.
 - 📝 **Multisignature Workflows** - Create approval chains requiring multiple signatures (`M-of-N` or `N-of-N`) before secrets are cryptographically released to recipients.
+- 💬 **Encrypted Messenger** - End-to-End Encrypted (E2EE) instant messaging. Messages are double-encrypted (for sender and recipient) using Kyber-768, ensuring privacy even from the server.
 - 👤 **User Profiles** - Manage usernames and view PQC identities.
 
 ## 📝 Multisignature Workflows
