@@ -16,7 +16,7 @@ A secure secret management and document signing application featuring **Quantum-
 - 🤝 **Secure Sharing** - Share encrypted secrets between any user type (Eth ↔ PQC).
 - ✍️ **Signed Documents** - Create, share, and verify digitally signed documents (Sign-then-Encrypt) to prove authorship.
 - 📝 **Multisignature Workflows** - Create approval chains requiring multiple signatures (`M-of-N` or `N-of-N`) before secrets are cryptographically released to recipients.
-- 💬 **Encrypted Messenger** - End-to-End Encrypted (E2EE) instant messaging. Messages are double-encrypted (for sender and recipient) using Kyber-768, ensuring privacy even from the server.
+- 💬 **Encrypted Messenger** - End-to-End Encrypted (E2EE) messaging using a **Signal-Lite** architecture. Features **Session Key** management (AES-256-GCM), **Kyber-1024** key exchange, and **Dilithium-512** signatures, ensuring perfect forward secrecy and quantum resistance.
 - 👤 **User Profiles** - Manage usernames and view PQC identities.
 
 ## 📝 Multisignature Workflows
@@ -36,6 +36,29 @@ Safelog implements a robust **Zero-Trust Multisignature** system designed for hi
 2.  **Sign**: Signers review the content and cryptographically sign it.
 3.  **Release**: When the **Last Signer** submits their signature, their client automatically generates and encrypts access keys for the Recipients.
 4.  **Access**: Only then does the workflow status flip to `COMPLETED`, allowing Recipients to decrypt and view the result.
+
+## 💬 Secure Messenger Architecture
+
+Safelog's messenger implements a **Signal-Lite** protocol designed for Post-Quantum security, ensuring End-to-End Encryption (E2EE) and Perfect Forward Secrecy (PFS).
+
+### Protocol Overview
+The system uses a hybrid cryptographic approach combining **Post-Quantum KEM** (Key Encapsulation Mechanism) with standard high-performance symmetric encryption.
+
+1.  **Session Initiation**:
+    -   When Alice messages Bob, she generates a random **32-byte AES Session Key**.
+    -   Alice encapsulates this key using Bob's **Kyber-1024** Public Key (KEM).
+    -   She also encapsulates it for herself using her own Public Key (for message history synchronization).
+
+2.  **Payload Encryption**:
+    -   The message content is encrypted using **AES-256-GCM** with the Session Key.
+    -   The encrypted package contains: `{ ciphertext, iv, wrapped_keys: { sender: blob, recip: blob } }`.
+
+3.  **Authentication**:
+    -   Every message is signed using **Dilithium-512** (Post-Quantum Digital Signature) ensuring sender authenticity and non-repudiation.
+
+4.  **Batch Processing**:
+    -   To improve UX while maintaining security, the Vault (Local or TrustKeys Extension) supports **Batch Unwrapping**.
+    -   When opening a conversation with multiple session rotations, the vault unlocks once and decrypts all relevant session keys in parallel, preventing "password fatigue."
 
 ## ⚠️ Security Notices
 
