@@ -163,6 +163,147 @@ export const decryptMessage = async (encryptedData, privateKeyHex) => {
     return dec.decode(decryptedContent);
 };
 
+// --- Session Key Architecture (Signal-Lite) ---
+
+export const generateSessionKey = () => {
+    // Generate a random 32-byte key for AES-256
+    const key = crypto.getRandomValues(new Uint8Array(32));
+    return toHex(key);
+};
+
+export const encryptSessionKey = (sessionKeyHex, publicKeyHex) => {
+    // Wrap the session key using Kyber
+    // Input: 32-byte key (hex). Output: Kyber Ciphertext (hex) + AES-encrypted key (hex)?
+    // Problem: Kyber Decapsulation produces a SHARED SECRET, not an arbitrary buffer decryption.
+    // Kyber is a KEM.
+    // Standard KEM:
+    // Sender: (ss, ct) = Encaps(pk)
+    // Receiver: ss = Decaps(ct, sk)
+    // We want to transmit 'SessionKey'.
+    // So we use 'ss' to AES-encrypt 'SessionKey'.
+    // Packet: { kem: ct, iv: ..., encKey: AES(SessionKey, ss) }
+
+    // BUT! We can just use the 'ss' AS the Session Key?
+    // If we do that, we can't control it. Sender needs to send the SAME key to multiple recipients (Self + Other).
+    // So Sender generates Random SessionKey.
+    // Sender -> Recipient: 
+    //    1. (ss_r, ct_r) = Encaps(pk_r)
+    //    2. enc_k_r = AES(SessionKey, key=ss_r)
+    //    3. Header: { kem: ct_r, iv: ..., key: enc_k_r }
+
+    try {
+        const pk = fromHex(publicKeyHex);
+        const [ct, ss] = Encrypt768(pk); // ct=1088 bytes, ss=32 bytes
+
+        // Use SS to encrypt the actual SessionKey
+        const sessionKey = fromHex(sessionKeyHex);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+
+        // Import SS as Key
+        // Note: ss is from Kyber, usually raw bytes.
+        // We can import directly.
+        // Sync import? importKey is async.
+        // We need to implement this async inside.
+        // But Kyber is sync (in this lib).
+
+        // Wait, Encrypt768 output format?
+        // crystal-kyber-js returns Uint8Array usually.
+
+        return { ct: toHex(ct), ss: toHex(ss) };
+    } catch (e) {
+        throw new Error("Session Key Encapsulation failed");
+    }
+};
+
+// Helper to encrypt the SessionKey blob using the KEM-derived secret
+// This needs to be async because of subtle crypto
+export const wrapSessionKey = async (sessionKeyHex, recipientPubKeyHex) => {
+    const pk = fromHex(recipientPubKeyHex);
+    const [ct, ss] = Encrypt768(pk); // KEM
+
+    // Encrypt SessionKey with SS
+    const startKey = await crypto.subtle.importKey(
+        "raw", ss, "AES-GCM", false, ["encrypt"]
+    );
+
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const sessionKeyBytes = fromHex(sessionKeyHex);
+
+    const encryptedKey = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        startKey,
+        sessionKeyBytes
+    );
+
+    return {
+        kem: toHex(ct),
+        iv: toHex(iv),
+        encKey: toHex(new Uint8Array(encryptedKey))
+    };
+};
+
+export const unwrapSessionKey = async (wrappedKey, privateKeyHex) => {
+    // wrappedKey: { kem, iv, encKey }
+    const sk = fromHex(privateKeyHex);
+    const ct = fromHex(wrappedKey.kem);
+
+    // Decapsulate to get SS
+    const ss = Decrypt768(ct, sk);
+
+    // Decrypt SessionKey
+    const unwrappingKey = await crypto.subtle.importKey(
+        "raw", ss, "AES-GCM", false, ["decrypt"]
+    );
+
+    const decryptedBytes = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: fromHex(wrappedKey.iv) },
+        unwrappingKey,
+        fromHex(wrappedKey.encKey)
+    );
+
+    return toHex(new Uint8Array(decryptedBytes));
+};
+
+export const encryptWithSessionKey = async (message, sessionKeyHex) => {
+    const keyBytes = fromHex(sessionKeyHex);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await crypto.subtle.importKey(
+        "raw", keyBytes, "AES-GCM", false, ["encrypt"]
+    );
+
+    const enc = new TextEncoder();
+    const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        enc.encode(message)
+    );
+
+    return {
+        iv: toHex(iv),
+        content: toHex(new Uint8Array(encrypted))
+    };
+};
+
+export const decryptWithSessionKey = async (encryptedData, sessionKeyHex) => {
+    // encryptedData: { iv, content }
+    const keyBytes = fromHex(sessionKeyHex);
+    const iv = fromHex(encryptedData.iv);
+    const content = fromHex(encryptedData.content);
+
+    const key = await crypto.subtle.importKey(
+        "raw", keyBytes, "AES-GCM", false, ["decrypt"]
+    );
+
+    const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        content
+    );
+
+    const dec = new TextDecoder();
+    return dec.decode(decrypted);
+};
+
 
 // --- Vault Security ---
 

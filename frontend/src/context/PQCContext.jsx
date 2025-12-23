@@ -159,6 +159,34 @@ export const PQCProvider = ({ children }) => {
         return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password), name);
     };
 
+    const generateSessionKey = async () => {
+        if (isExtensionAvailable && window.trustkeys) {
+            return await window.trustkeys.generateSessionKey();
+        } else if (!vaultService.isLocked) {
+            return await vaultService.generateSessionKey();
+        }
+        throw new Error("PQC Provider not ready (Locked or Missing)");
+    };
+
+    const wrapSessionKey = async (sessionKey, publicKey) => {
+        if (isExtensionAvailable && window.trustkeys) {
+            return await window.trustkeys.wrapSessionKey(sessionKey, publicKey);
+        } else if (!vaultService.isLocked) {
+            return await vaultService.wrapSessionKey(sessionKey, publicKey);
+        }
+        throw new Error("PQC Provider not ready (Locked or Missing)");
+    };
+
+    const unwrapSessionKey = async (wrappedKey) => {
+        if (isExtensionAvailable && window.trustkeys) {
+            return await window.trustkeys.unwrapSessionKey(wrappedKey);
+        } else if (!vaultService.isLocked) {
+            const password = await requestPassword("Enter password to unwrap session key:");
+            return await vaultService.unwrapSessionKey(wrappedKey, password);
+        }
+        throw new Error("PQC Provider not ready (Locked or Missing)");
+    };
+
     const encrypt = async (content, publicKey) => {
         if (isExtensionAvailable && window.trustkeys) {
             return await window.trustkeys.encrypt(content, publicKey || kyberKey);
@@ -282,7 +310,10 @@ export const PQCProvider = ({ children }) => {
             switchVaultAccount,
             deleteVaultAccount,
             exportVault,
-            importVault
+            importVault,
+            generateSessionKey,
+            wrapSessionKey,
+            unwrapSessionKey
         }}>
             {children}
 

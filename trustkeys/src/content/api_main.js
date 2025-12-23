@@ -44,6 +44,15 @@ window.trustkeys = {
     },
     handshake: async () => {
         return window.postMessagePromise({ type: 'TRUSTKEYS_HANDSHAKE' });
+    },
+    generateSessionKey: async () => {
+        return window.postMessagePromise({ type: 'TRUSTKEYS_GENERATE_SESSION_KEY' });
+    },
+    wrapSessionKey: async (sessionKey, publicKey) => {
+        return window.postMessagePromise({ type: 'TRUSTKEYS_WRAP_SESSION_KEY', sessionKey, publicKey });
+    },
+    unwrapSessionKey: async (wrappedKey) => {
+        return window.postMessagePromise({ type: 'TRUSTKEYS_UNWRAP_SESSION_KEY', wrappedKey });
     }
 };
 

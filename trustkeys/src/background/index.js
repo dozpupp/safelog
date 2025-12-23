@@ -1,4 +1,4 @@
-import { generateAccount, signMessage, verifySignature, encryptMessage, decryptMessage, encryptVault, decryptVault } from '../utils/crypto';
+import { generateAccount, signMessage, verifySignature, encryptMessage, decryptMessage, encryptVault, decryptVault, generateSessionKey, wrapSessionKey, unwrapSessionKey } from '../utils/crypto';
 import { deriveShareA, createShareB, recoverSecret, toHex, fromHex } from '../utils/mpc.js';
 
 // Types
@@ -480,6 +480,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     await launchPopup('decrypt', { requestId: reqId });
                     return true; // Keep channel open
                 }
+                // --- Session Key Support ---
+                case 'GENERATE_SESSION_KEY': {
+                    const key = generateSessionKey();
+                    sendResponse({ success: true, key });
+                    break;
+                }
+                case 'WRAP_SESSION_KEY': {
+                    // Requires public key (recipient's or sender's self-share)
+                    const { sessionKey, publicKey } = request;
+                    if (!sessionKey || !publicKey) throw new Error("Missing params");
+
+                    const wrapped = await wrapSessionKey(sessionKey, publicKey);
+                    sendResponse({ success: true, wrapped });
+                    break;
+                }
+                case 'UNWRAP_SESSION_KEY': {
+                    // Requires Private Key -> Needs active account and permission
+                    if (state.isLocked) throw new Error("Locked");
+                    const checkOrigin = sender.origin || request.origin;
+                    if (!state.vault.permissions[checkOrigin]) throw new Error("Site not connected");
+
+                    const reqId = Math.random().toString(36).substr(2, 9);
+                    pendingRequests.set(reqId, {
+                        resolve: async () => {
+                            const account = state.vault.accounts.find(a => a.id === state.vault.activeAccountId);
+                            if (!account) return sendResponse({ success: false, error: "No active account" });
+
+                            try {
+                                const sessionKey = await unwrapSessionKey(request.wrappedKey, account.kyber.privateKey);
+                                sendResponse({ success: true, sessionKey });
+                            } catch (e) {
+                                sendResponse({ success: false, error: "Unwrap failed" });
+                            }
+                        },
+                        reject: (err) => sendResponse({ success: false, error: err || "Rejected" }),
+                        type: 'DECRYPT', // Reuse DECRYPT type for UI prompt (it is a decryption op)
+                        data: { origin: checkOrigin }
+                    });
+
+                    await launchPopup('decrypt', { requestId: reqId });
+                    return true;
+                }
+
                 case 'BACKUP_TO_GOOGLE': {
                     if (state.isLocked) throw new Error("Vault is locked");
                     const { password, token } = request;

@@ -70,9 +70,20 @@ window.addEventListener('message', async (event) => {
                 result = shakeRes.extensionId;
                 break;
             case 'TRUSTKEYS_OAUTH_SUCCESS':
-                // New method: Allow page to send token via postMessage (no ID needed)
                 const oauthRes = await callBackground('OAUTH_SUCCESS', { token: payload.token });
                 result = oauthRes.success;
+                break;
+            case 'TRUSTKEYS_GENERATE_SESSION_KEY':
+                const genRes = await callBackground('GENERATE_SESSION_KEY');
+                result = genRes.key;
+                break;
+            case 'TRUSTKEYS_WRAP_SESSION_KEY':
+                const wrapRes = await callBackground('WRAP_SESSION_KEY', { sessionKey: payload.sessionKey, publicKey: payload.publicKey });
+                result = wrapRes.wrapped;
+                break;
+            case 'TRUSTKEYS_UNWRAP_SESSION_KEY':
+                const unwrapRes = await callBackground('UNWRAP_SESSION_KEY', { wrappedKey: payload.wrappedKey });
+                result = unwrapRes.sessionKey;
                 break;
             default:
                 return; // Ignore unknown types

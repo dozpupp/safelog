@@ -1,4 +1,4 @@
-import { encryptVault, decryptVault, generateAccount, signMessagePQC, decryptMessagePQC } from '../utils/crypto';
+import { encryptVault, decryptVault, generateAccount, signMessagePQC, decryptMessagePQC, unwrapSessionKey, generateSessionKey, wrapSessionKey } from '../utils/crypto';
 
 class VaultService {
     constructor() {
@@ -281,6 +281,30 @@ class VaultService {
                 return "Error: Decryption Failed";
             }
         }));
+    }
+
+    // --- Session Key Support ---
+
+    async generateSessionKey() {
+        // Stateless, but exposed for consistency
+        return await generateSessionKey();
+    }
+
+    async wrapSessionKey(sessionKey, publicKey) {
+        // Stateless, but exposed for consistency
+        return await wrapSessionKey(sessionKey, publicKey);
+    }
+
+    async unwrapSessionKey(wrappedKey, password) {
+        if (this.isLocked) throw new Error("Vault locked");
+
+        // 1. Load Vault to get Private Key
+        const fullVault = await this._getFullVault(password);
+        const account = fullVault.accounts.find(a => a.id === fullVault.activeAccountId);
+        if (!account) throw new Error("Active account not found");
+
+        // 2. Unwrap
+        return await unwrapSessionKey(wrappedKey, account.kyber.privateKey);
     }
 }
 
