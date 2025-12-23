@@ -306,6 +306,28 @@ class VaultService {
         // 2. Unwrap
         return await unwrapSessionKey(wrappedKey, account.kyber.privateKey);
     }
+
+    async unwrapManySessionKeys(wrappedKeys, password) {
+        if (this.isLocked) throw new Error("Vault locked");
+
+        // 1. Load Vault to get Private Key (ONCE)
+        const fullVault = await this._getFullVault(password);
+        const account = fullVault.accounts.find(a => a.id === fullVault.activeAccountId);
+        if (!account) throw new Error("Active account not found");
+
+        const privKey = account.kyber.privateKey;
+
+        // 2. Unwrap All
+        // We run these in parallel since we have the key
+        return await Promise.all(wrappedKeys.map(async (blob) => {
+            try {
+                return await unwrapSessionKey(blob, privKey);
+            } catch (e) {
+                console.error("Batch unwrap item failed", e);
+                return null;
+            }
+        }));
+    }
 }
 
 export const vaultService = new VaultService();

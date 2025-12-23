@@ -187,6 +187,21 @@ export const PQCProvider = ({ children }) => {
         throw new Error("PQC Provider not ready (Locked or Missing)");
     };
 
+    const unwrapManySessionKeys = async (wrappedKeys) => {
+        if (isExtensionAvailable && window.trustkeys) {
+            if (window.trustkeys.unwrapManySessionKeys) {
+                return await window.trustkeys.unwrapManySessionKeys(wrappedKeys);
+            }
+            // Fallback for older extension versions
+            return await Promise.all(wrappedKeys.map(wk => window.trustkeys.unwrapSessionKey(wk)));
+        } else if (!vaultService.isLocked) {
+            // Local Vault: ONE prompt
+            const password = await requestPassword("Enter password to unlock session keys (Batch):");
+            return await vaultService.unwrapManySessionKeys(wrappedKeys, password);
+        }
+        throw new Error("PQC Provider not ready (Locked or Missing)");
+    };
+
     const encrypt = async (content, publicKey) => {
         if (isExtensionAvailable && window.trustkeys) {
             return await window.trustkeys.encrypt(content, publicKey || kyberKey);
@@ -313,7 +328,8 @@ export const PQCProvider = ({ children }) => {
             importVault,
             generateSessionKey,
             wrapSessionKey,
-            unwrapSessionKey
+            unwrapSessionKey,
+            unwrapManySessionKeys
         }}>
             {children}
 

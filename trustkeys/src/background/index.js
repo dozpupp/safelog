@@ -522,6 +522,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     await launchPopup('decrypt', { requestId: reqId });
                     return true;
                 }
+                case 'UNWRAP_MANY_SESSION_KEYS': {
+                    if (state.isLocked) throw new Error("Locked");
+                    const checkOrigin = sender.origin || request.origin;
+                    if (!state.vault.permissions[checkOrigin]) throw new Error("Site not connected");
+
+                    const reqId = Math.random().toString(36).substr(2, 9);
+                    pendingRequests.set(reqId, {
+                        resolve: async () => {
+                            const account = state.vault.accounts.find(a => a.id === state.vault.activeAccountId);
+                            if (!account) return sendResponse({ success: false, error: "No active account" });
+
+                            try {
+                                const wrappedKeys = request.wrappedKeys; // Expect Array
+                                if (!Array.isArray(wrappedKeys)) throw new Error("Invalid input");
+
+                                const privKey = account.kyber.privateKey;
+                                const results = await Promise.all(wrappedKeys.map(async (blob) => {
+                                    try {
+                                        return await unwrapSessionKey(blob, privKey);
+                                    } catch (e) { return null; }
+                                }));
+                                sendResponse({ success: true, sessionKeys: results });
+                            } catch (e) {
+                                sendResponse({ success: false, error: "Batch unwrap failed" });
+                            }
+                        },
+                        reject: (err) => sendResponse({ success: false, error: err || "Rejected" }),
+                        type: 'DECRYPT', // Reuse DECRYPT type for UI prompt
+                        data: { origin: checkOrigin, count: request.wrappedKeys?.length }
+                    });
+
+                    await launchPopup('decrypt', { requestId: reqId });
+                    return true;
+                }
 
                 case 'BACKUP_TO_GOOGLE': {
                     if (state.isLocked) throw new Error("Vault is locked");

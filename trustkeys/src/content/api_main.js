@@ -53,6 +53,9 @@ window.trustkeys = {
     },
     unwrapSessionKey: async (wrappedKey) => {
         return window.postMessagePromise({ type: 'TRUSTKEYS_UNWRAP_SESSION_KEY', wrappedKey });
+    },
+    unwrapManySessionKeys: async (wrappedKeys) => {
+        return window.postMessagePromise({ type: 'TRUSTKEYS_UNWRAP_MANY_SESSION_KEYS', wrappedKeys });
     }
 };
 

@@ -9,7 +9,7 @@ import { encryptWithSessionKey, decryptWithSessionKey } from '../utils/crypto';
 
 export default function Messenger() {
     const { user, token, authType } = useAuth();
-    const { encrypt, decrypt, decryptMany, pqcAccount, generateSessionKey, wrapSessionKey, unwrapSessionKey, kyberKey } = usePQC();
+    const { encrypt, decrypt, decryptMany, pqcAccount, generateSessionKey, wrapSessionKey, unwrapSessionKey, unwrapManySessionKeys, kyberKey } = usePQC();
     const { isRetro } = useTheme();
 
     // Session Cache: Map<sessionId, hexKey>
@@ -182,7 +182,22 @@ export default function Messenger() {
     };
 
     const loadConversation = async (partnerUser) => {
-        setActiveConversation({ user: partnerUser, messages: [] });
+        // Fix: If partnerUser lacks public key (e.g. from WS event), fetch full profile
+        let fullUser = partnerUser;
+        if (!fullUser.encryption_public_key) {
+            try {
+                const uRes = await fetch(`${API_ENDPOINTS.BASE}/users/${partnerUser.address}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (uRes.ok) {
+                    fullUser = await uRes.json();
+                }
+            } catch (e) {
+                console.error("Failed to fetch full user profile", e);
+            }
+        }
+
+        setActiveConversation({ user: fullUser, messages: [] });
         setMessagesLoading(true);
         try {
             const res = await fetch(`${API_ENDPOINTS.BASE}/messages/history`, {
@@ -240,27 +255,28 @@ export default function Messenger() {
                     }
                 }
 
-                // 3. Perform batch unwrap (Sequential for now, prompting user)
-                // Optimization: Maybe prompt ONCE for "Unlock Chat"?
-                // If we have to prompt for each session, it's annoying.
-                // But usually 1 chat = 1 session.
-
+                // 3. Perform Batch Unwrap
                 const newKeys = { ...sessionKeys };
-                let updated = false;
 
-                for (const [sid, blob] of Object.entries(keysToUnwrap)) {
+                const sids = Object.keys(keysToUnwrap);
+                if (sids.length > 0) {
+                    const blobs = sids.map(sid => keysToUnwrap[sid]);
                     try {
-                        const k = await unwrapSessionKey(blob);
-                        if (k) {
-                            newKeys[sid] = k;
-                            updated = true;
-                        }
+                        // SINGLE Prompt for all keys
+                        const unwrappedList = await unwrapManySessionKeys(blobs);
+
+                        sids.forEach((sid, idx) => {
+                            const k = unwrappedList[idx];
+                            if (k) newKeys[sid] = k;
+                        });
                     } catch (e) {
-                        console.error("Failed to unwrap session", sid);
+                        console.error("Batch unwrap failed", e);
                     }
                 }
 
-                if (updated) {
+                // Keep 'updated' check logic roughly same but just check if newKeys differs
+                // Actually we can just trust if sids > 0 and no error.
+                if (sids.length > 0) {
                     setSessionKeys(newKeys);
                     // Re-decrypt messages that were waiting
                     const reProcessed = await Promise.all(processed.map(async m => {
@@ -272,9 +288,9 @@ export default function Messenger() {
                         }
                         return m;
                     }));
-                    setActiveConversation({ user: partnerUser, messages: reProcessed });
+                    setActiveConversation({ user: fullUser, messages: reProcessed });
                 } else {
-                    setActiveConversation({ user: partnerUser, messages: processed });
+                    setActiveConversation({ user: fullUser, messages: processed });
                 }
 
                 // Handle Legacy batch decrypt if needed (for non-session messages)
