@@ -20,6 +20,25 @@ const initializeStorage = async () => {
     const { vaultData } = await chrome.storage.local.get('vaultData');
     state.hasPassword = !!vaultData;
 
+    try {
+        const session = await chrome.storage.session.get(['sessionPassword', 'lastActive']);
+        if (session.sessionPassword && session.lastActive) {
+            const ONE_HOUR = 60 * 60 * 1000;
+            if (Date.now() - session.lastActive < ONE_HOUR) {
+                const success = await unlockWithSession(session.sessionPassword);
+                if (success) {
+                    console.log("TrustKeys: Session restored");
+                    // Update timestamp
+                    await chrome.storage.session.set({ lastActive: Date.now() });
+                }
+            } else {
+                await chrome.storage.session.remove(['sessionPassword', 'lastActive']);
+                console.log("TrustKeys: Session expired");
+            }
+        }
+    } catch (e) {
+        console.warn("Session restore failed", e);
+    }
 };
 initializeStorage();
 
@@ -102,20 +121,33 @@ const unlockWithSession = async (password) => {
     const success = await unlock(password);
     if (success) {
         sessionPassword = password;
-
+        try {
+            await chrome.storage.session.set({
+                sessionPassword: password,
+                lastActive: Date.now()
+            });
+        } catch (e) { console.warn("Failed to persist session", e); }
     }
     return success;
 };
 
-const lockWithSession = () => {
+const lockWithSession = async () => {
     lock();
     sessionPassword = null;
+    try {
+        await chrome.storage.session.remove(['sessionPassword', 'lastActive']);
+    } catch (e) { console.warn("Failed to clear session", e); }
 };
 
 // Message Handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
         try {
+            // Update Activity
+            if (!state.isLocked) {
+                chrome.storage.session.set({ lastActive: Date.now() }).catch(() => { });
+            }
+
             switch (request.type) {
                 // --- Security ---
                 case 'GET_STATUS': {
@@ -138,7 +170,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     break;
                 }
                 case 'LOCK': {
-                    lockWithSession();
+                    await lockWithSession();
                     sendResponse({ success: true });
                     break;
                 }
@@ -511,7 +543,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                 const sessionKey = await unwrapSessionKey(request.wrappedKey, account.kyber.privateKey);
                                 sendResponse({ success: true, sessionKey });
                             } catch (e) {
-                                sendResponse({ success: false, error: "Unwrap failed" });
+                                console.error("TrustKeys: Unwrap failed", e);
+                                sendResponse({ success: false, error: "Unwrap failed: " + e.message });
                             }
                         },
                         reject: (err) => sendResponse({ success: false, error: err || "Rejected" }),
@@ -545,7 +578,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                 }));
                                 sendResponse({ success: true, sessionKeys: results });
                             } catch (e) {
-                                sendResponse({ success: false, error: "Batch unwrap failed" });
+                                console.error("TrustKeys: Batch unwrap failed", e);
+                                sendResponse({ success: false, error: "Batch unwrap failed: " + e.message });
                             }
                         },
                         reject: (err) => sendResponse({ success: false, error: err || "Rejected" }),

@@ -258,7 +258,7 @@ export const unwrapSessionKey = async (wrappedKey, privateKeyHex) => {
     const decryptedBytes = await crypto.subtle.decrypt(
         { name: "AES-GCM", iv: fromHex(wrappedKey.iv) },
         unwrappingKey,
-        fromHex(wrappedKey.encKey)
+        fromHex(wrappedKey.encKey || wrappedKey.ct)
     );
 
     return toHex(new Uint8Array(decryptedBytes));

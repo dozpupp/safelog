@@ -386,7 +386,7 @@ export const wrapSessionKey = async (sessionKeyHex, publicKeyHex) => {
     return {
         kem: toHex(ct),
         iv: toHex(iv),
-        ct: toHex(new Uint8Array(encryptedKey))
+        encKey: toHex(new Uint8Array(encryptedKey)) // Standardized name
     };
 };
 
@@ -401,7 +401,8 @@ export const unwrapSessionKey = async (wrappedKey, privateKeyHex) => {
 
     // 2. Decrypt Session Key
     const iv = fromHex(wrappedKey.iv);
-    const encryptedKey = fromHex(wrappedKey.ct);
+    // Support 'encKey' (new standard) or 'ct' (legacy/frontend-local)
+    const encryptedKey = fromHex(wrappedKey.encKey || wrappedKey.ct);
 
     const kek = await crypto.subtle.importKey(
         "raw", kekSeed, "AES-GCM", false, ["decrypt"]

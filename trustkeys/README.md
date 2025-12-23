@@ -22,7 +22,8 @@ TrustKeys utilizes the NIST multi-round selected algorithms for post-quantum sec
 - **Zero-Knowledge Architecture**: Your private keys never leave the extension.
 - **Encryption**: The vault is encrypted at rest using **AES-GCM (256-bit)**.
 - **Key Derivation**: Your password derives the encryption key using **PBKDF2** (SHA-256, 100,000 iterations).
-- **Memory-Only Decryption**: Private keys are decrypted into memory *only* when the vault is unlocked and are cleared immediately upon locking.
+- **Memory-Only Decryption**: Private keys are decrypted into memory *only* when the vault is unlocked.
+- **Session Persistence**: The vault remains unlocked for **1 Hour** of inactivity. The encryption key is stored in `chrome.storage.session` (in-memory), which is **automatically wiped** when the browser is closed.
 
 ### 3. MPC Recovery (Google Backup) -- WIP -- Not fully usable for now
 TrustKeys supports **Multi-Party Computation (MPC)** based recovery.
@@ -116,6 +117,37 @@ const plaintext = await window.trustkeys.decrypt(encryptedObject);
 ```
 
 ---
+
+
+### 6. Session Key Management (Signal-Lite)
+Helpers for managing symmetric session keys (AES-256) used in E2EE messaging.
+
+#### A. Generate Key
+```javascript
+const key = await window.trustkeys.generateSessionKey();
+// Returns 32-byte generic AES key (Hex).
+```
+
+#### B. Wrap Session Key
+Encrypt a session key for a specific recipient (using their Kyber Key).
+```javascript
+const wrapped = await window.trustkeys.wrapSessionKey(sessionKey, recipientKyberKey);
+// Returns encrypted blob (Hex).
+```
+
+#### C. Unwrap Session Key
+Decrypt a session key using your private Kyber Key.
+```javascript
+const sessionKey = await window.trustkeys.unwrapSessionKey(wrappedBlob);
+// Triggers Approval Popup. Returns sessionKey (Hex).
+```
+
+#### D. Batch Unwrap (New)
+Decrypt multiple session keys in a single operation to prevent "Password Fatigue".
+```javascript
+const keys = await window.trustkeys.unwrapManySessionKeys([blob1, blob2, blob3]);
+// Triggers ONE Approval Popup. Returns array of sessionKeys.
+```
 
 ## 🔗 Integration Roadmap
 
