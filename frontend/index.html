@@ -8,7 +8,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SafeLog</title>
   <meta http-equiv="Content-Security-Policy"
-    content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://ssl.gstatic.com;">
+    content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://ssl.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src 'self' http://localhost:* ws://localhost:* https://safeapi.hashpar.com https://accounts.google.com https://*.googleapis.com;">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -167,6 +167,8 @@ class ConversationResponse(BaseModel):
 
 class HistoryRequest(BaseModel):
     partner_address: str
+    limit: int = Field(50, ge=1, le=100) # Default 50, Max 100
+    offset: int = Field(0, ge=0)
 
 class Token(BaseModel):
     access_token: str

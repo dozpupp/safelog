@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocke
 from fastapi.security import OAuth2PasswordBearer
 
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from sqlalchemy import or_, func, case
 from typing import List
 from datetime import datetime, timezone, timedelta
@@ -625,7 +625,10 @@ async def send_message(msg: schemas.MessageCreate, current_user: models.User = D
 @app.get("/messages/conversations", response_model=List[schemas.ConversationResponse])
 def get_conversations(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     # Fetch all messages involving me
-    all_msgs = db.query(models.Message).filter(
+    # OPTIMIZATION: value 'content' is deferred to prevent loading massive blobs into memory
+    # when we only need metadata to sort/group.
+    # Content will be lazy-loaded only for the single 'last_message' per conversation during serialization.
+    all_msgs = db.query(models.Message).options(defer(models.Message.content)).filter(
         or_(
             models.Message.sender_address == current_user.address,
             models.Message.recipient_address == current_user.address
@@ -663,9 +666,9 @@ def get_message_history(req: schemas.HistoryRequest, current_user: models.User =
             (models.Message.sender_address == current_user.address) & (models.Message.recipient_address == partner_address),
             (models.Message.sender_address == partner_address) & (models.Message.recipient_address == current_user.address)
         )
-    ).order_by(models.Message.created_at.asc()).all()
+    ).order_by(models.Message.created_at.desc()).limit(req.limit).offset(req.offset).all()
     
-    return msgs
+    return msgs[::-1]
 
 
 @app.post("/messages/mark-read/{partner_address}")
