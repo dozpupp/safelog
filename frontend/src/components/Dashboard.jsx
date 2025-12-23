@@ -1,769 +1,122 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useWeb3 } from '../context/Web3Context';
 import { usePQC } from '../context/PQCContext';
 import { useTheme } from '../context/ThemeContext';
+import { useSecrets } from '../hooks/useSecrets';
+import { useMultisig } from '../hooks/useMultisig';
+import { useMessenger } from '../hooks/useMessenger';
+import { Lock, Sun, Moon, Shield, FolderGit2, Plus, LogOut } from 'lucide-react';
+
+// Components
+import GlobalProgressBar from './common/GlobalProgressBar';
+
+// Components
+import SecretList from './dashboard/SecretList';
+import CreateSecret from './dashboard/CreateSecret';
+import ShareModal from './dashboard/ShareModal';
 import VaultManager from './VaultManager';
-import { encryptData, decryptData, getEncryptionPublicKey } from '../utils/crypto';
-import { Plus, Lock, Unlock, Copy, Check, FileText, Share2, LogOut, RefreshCw, User, X, Search, Trash2, Edit2, Clock, Upload, Download, Sun, Moon, Shield, FileSignature, BadgeCheck, AlertTriangle, Workflow, Loader2 } from 'lucide-react';
-import MultisigCreateModal from './MultisigCreateModal';
 import MultisigWorkflow from './MultisigWorkflow';
+import MultisigCreateModal from './MultisigCreateModal';
+import MultisigList from './dashboard/MultisigList';
+import ProfileModal from './dashboard/ProfileModal';
 import Messenger from './Messenger';
-import { verifySignaturePQC } from '../utils/crypto';
-import API_ENDPOINTS from '../config';
-import { MessageSquare } from 'lucide-react';
-
-const DisplayField = ({ label, value }) => {
-    const [copied, setCopied] = useState(false);
-
-    const handleCopy = () => {
-        if (!value) return;
-        navigator.clipboard.writeText(value);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    };
-
-    // Force truncation logic
-    const shouldTruncate = value && value.length > 20;
-    const displayValue = shouldTruncate
-        ? `${value.substring(0, 8)}...${value.substring(value.length - 8)}`
-        : value;
-
-    return (
-        <div>
-            <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">{label}</label>
-            <div className="flex gap-2">
-                <div className="flex-1 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-600 dark:text-slate-500 font-mono text-xs break-all flex items-center">
-                    {displayValue || "Not set"}
-                </div>
-                <button
-                    type="button"
-                    onClick={handleCopy}
-                    className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
-                    title="Copy to clipboard"
-                >
-                    {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                </button>
-            </div>
-        </div>
-    );
-};
 
 export default function Dashboard() {
-    const { user, setUser, authType, token, logout } = useAuth();
+    const { user, authType, logout, setUser, token } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const { currentAccount, encryptionPublicKey: ethKey } = useWeb3();
-    const { kyberKey, pqcAccount, encrypt: encryptPQC, decrypt: decryptPQC, sign: signPQC, hasLocalVault, isExtensionAvailable } = usePQC();
+    const { hasLocalVault, isExtensionAvailable, kyberKey, pqcAccount } = usePQC();
 
-    // Unify state based on Auth Type
+    // Global Progress State
+    const [globalProgress, setGlobalProgress] = useState(0);
+    const [globalStatus, setGlobalStatus] = useState('');
+
+    const updateProgress = (pct, msg = '') => {
+        setGlobalProgress(pct);
+        setGlobalStatus(msg);
+    };
+
+    // Derived Logic
     const encryptionPublicKey = authType === 'trustkeys' ? kyberKey : ethKey;
-    // For PQC, account ID is the Dilithium Public Key (pqcAccount)
     const currentDisplayAccount = authType === 'trustkeys' ? pqcAccount : currentAccount;
-    const [showVaultManager, setShowVaultManager] = useState(false);
-    const [secrets, setSecrets] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [newSecretName, setNewSecretName] = useState('');
-    const [newSecretContent, setNewSecretContent] = useState('');
-    const [isCreating, setIsCreating] = useState(false);
-    const [decryptedSecrets, setDecryptedSecrets] = useState({}); // id -> content
-    const [isProfileOpen, setIsProfileOpen] = useState(false);
-    const [usernameInput, setUsernameInput] = useState('');
-    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-    const [secretToShare, setSecretToShare] = useState(null);
-    const [users, setUsers] = useState([]);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [selectedUser, setSelectedUser] = useState(null);
-    const [sharedSecrets, setSharedSecrets] = useState([]);
+
+    // Custom Hooks
+    const {
+        secrets,
+        sharedSecrets,
+        loading: secretsLoading,
+        decryptedSecrets,
+        handleDecrypt,
+        createSecret,
+        updateSecret,
+        deleteSecret,
+        shareSecret
+    } = useSecrets(authType, encryptionPublicKey, currentDisplayAccount, { onProgress: updateProgress });
+
+    const {
+        workflows,
+        loading: workflowsLoading,
+        fetchWorkflows,
+        setWorkflows,
+        actionRequiredCount
+    } = useMultisig();
 
     // View State
-    const [currentView, setCurrentView] = useState('secrets'); // 'secrets', 'messenger'
+    const [currentView, setCurrentView] = useState('secrets'); // 'secrets', 'messenger', 'multisig'
+    const [isCreating, setIsCreating] = useState(false);
+    const [showVaultManager, setShowVaultManager] = useState(false);
 
     // Multisig State
-    const [workflows, setWorkflows] = useState([]);
-    const [isMultisigCreateOpen, setIsMultisigCreateOpen] = useState(false);
     const [selectedWorkflow, setSelectedWorkflow] = useState(null);
+    const [isMultisigCreateOpen, setIsMultisigCreateOpen] = useState(false);
 
-    // New State for V1.3
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [secretToEdit, setSecretToEdit] = useState(null);
-    const [editName, setEditName] = useState('');
-    const [editContent, setEditContent] = useState('');
-    const [accessList, setAccessList] = useState([]);
-    const [expiry, setExpiry] = useState(0);
-    const [userOffset, setUserOffset] = useState(0);
-    const [hasMoreUsers, setHasMoreUsers] = useState(true);
+    // Share Modal State
+    const [secretToShare, setSecretToShare] = useState(null);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
-    // File Upload State
-    const [contentType, setContentType] = useState('text'); // 'text' | 'file'
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [uploadProgress, setUploadProgress] = useState(0);
-    const [statusMessage, setStatusMessage] = useState('');
-    const [isSigned, setIsSigned] = useState(false);
-    const [verificationResult, setVerificationResult] = useState(null); // {valid, signer}
+    // Profile State
+    const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-
-    useEffect(() => {
-        if (user?.username) {
-            setUsernameInput(user.username);
-        }
-    }, [user]);
-
-    useEffect(() => {
-        fetchSecrets();
-        fetchSharedSecrets();
-        fetchWorkflows();
-    }, [user]);
-
-    const fetchWorkflows = async () => {
-        if (!user || !token) return;
-        try {
-            const res = await fetch(API_ENDPOINTS.SECRETS.LIST + '/../multisig/workflows', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setWorkflows(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch workflows", error);
-        }
-    };
-
-    const fetchSecrets = async () => {
-        if (!user || !token) return;
-        try {
-            const res = await fetch(API_ENDPOINTS.SECRETS.LIST, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setSecrets(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch secrets", error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchSharedSecrets = async () => {
-        if (!user || !token) return;
-        try {
-            const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setSharedSecrets(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch shared secrets", error);
-        }
-    };
-
-    const searchUsers = async (query, offset = 0) => {
-        try {
-            const limit = 10;
-            const url = query
-                ? `${API_ENDPOINTS.USERS.LIST}?search=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`
-                : `${API_ENDPOINTS.USERS.LIST}?limit=${limit}&offset=${offset}`;
-            const res = await fetch(url);
-            const data = await res.json();
-
-            // Filter out current user
-            const filteredUsers = data.filter(u => u.address !== user.address);
-
-            if (offset === 0) {
-                setUsers(filteredUsers);
-            } else {
-                setUsers(filteredUsers); // Replace list for simple pagination, or append? Request says "load the 10 next", implies paging.
-                // Let's replace for now as "Next" usually implies paging.
-            }
-
-            setHasMoreUsers(data.length === limit);
-            setUserOffset(offset);
-        } catch (error) {
-            console.error("Failed to search users", error);
-        }
-    };
-
-    const loadNextUsers = () => {
-        searchUsers(searchQuery, userOffset + 10);
-    };
-
-    const handleOpenShareModal = async (secret) => {
+    // Handle Actions
+    const openShareModal = (secret) => {
         setSecretToShare(secret);
         setIsShareModalOpen(true);
-        setSearchQuery('');
-        setSelectedUser(null);
-        setAccessList([]); // Clear previous list
-        setAccessList([]); // Clear previous list
-        await searchUsers('', 0);
-        await fetchAccessList(secret.id); // Fetch access list immediately
     };
 
-    // Helper to decrypt any secret (Standard or PQC)
-    const secureDecrypt = async (encryptedString) => {
-        try {
-            // Try parsing as JSON to detect PQC format
-            const parsed = JSON.parse(encryptedString);
+    const handleCreateWrapper = async (name, type, content, isSigned) => {
+        return await createSecret(name, type, content, isSigned);
+    };
 
-            // Check for TrustKeys (PQC) format: {kem, iv, content}
-            if (parsed.kem && parsed.iv && parsed.content && authType === 'trustkeys') {
-                return await decryptPQC(parsed);
-            }
-
-            // Fallback to MetaMask decryption
-            return decryptData(encryptedString, currentAccount);
-        } catch (e) {
-            // If parse fails or other error, try standard decrypt
-            return decryptData(encryptedString, currentAccount);
+    const handleMultisigUpdate = (updatedWf) => {
+        setWorkflows(prev => prev.map(w => w.id === updatedWf.id ? updatedWf : w));
+        if (selectedWorkflow && selectedWorkflow.id === updatedWf.id) {
+            setSelectedWorkflow(updatedWf);
         }
     };
 
-    // Helper to encrypt
-    const secureEncrypt = async (content, pubKey) => {
-        if (authType === 'trustkeys') {
-            const res = await encryptPQC(content, pubKey);
-            return JSON.stringify(res);
-        } else {
-            return encryptData(content, pubKey);
-        }
+    // We need messenger state for badges. 
+    // Optimization: Lift useMessenger to here? Or create light version?
+    // Current app structure: Messenger component calls useMessenger. 
+    // To get unread count at Dashboard level, we must call useMessenger here.
+    const { unreadCount } = useMessenger();
+
+    const handleMultisigCreateSuccess = () => {
+        setIsMultisigCreateOpen(false);
+        fetchWorkflows();
     };
 
-    const fetchAccessList = async (secretId) => {
-        if (!user || !secretId || !token) return;
-        try {
-            const res = await fetch(API_ENDPOINTS.SECRETS.ACCESS(secretId), {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setAccessList(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch access list", error);
-        }
-    };
-
-    const handleOpenEditModal = async (secret) => {
-        // Must decrypt first to edit
-        if (!decryptedSecrets[secret.id]) {
-            await handleDecrypt(secret);
-        }
-        // Ideally we wait for state, but we can just grab the value or re-decrypt
-        // For simplicity, let's just use what we have or re-decrypt
-        try {
-            const content = await secureDecrypt(secret.encrypted_data);
-            if (!content) return;
-            setEditContent(content);
-            setSecretToEdit(secret);
-            setEditName(secret.name);
-            setIsEditModalOpen(true);
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
-    const handleDeleteSecret = async (id) => {
-        if (!confirm("Are you sure? This will delete the secret for everyone.")) return;
-        try {
-            const res = await fetch(API_ENDPOINTS.SECRETS.DELETE(id), {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                // Instant UI Update
-                setSecrets(prev => prev.filter(s => s.id !== id));
-            }
-        } catch (error) {
-            console.error("Delete failed", error);
-        }
-    };
-
-    const handleRevokeGrant = async (grantId) => {
-        if (!confirm("Are you sure you want to revoke access?")) return;
-        try {
-            const res = await fetch(API_ENDPOINTS.SECRETS.REVOKE(grantId), {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                // Instant UI Update
-                if (secretToShare) {
-                    setAccessList(prev => prev.filter(g => g.id !== grantId));
-                } else {
-                    setSharedSecrets(prev => prev.filter(g => g.id !== grantId));
-                }
-            }
-        } catch (error) {
-            console.error("Revoke failed", error);
-        }
-    };
-
-    const handleUpdateSecret = async (e) => {
-        e.preventDefault();
-        try {
-            setUploadProgress(20);
-            setStatusMessage("Encrypting...");
-
-            // Re-encrypt
-            const encrypted = await secureEncrypt(editContent, encryptionPublicKey);
-            setUploadProgress(60);
-            setStatusMessage("Saving...");
-
-            const res = await fetch(API_ENDPOINTS.SECRETS.UPDATE(secretToEdit.id), {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    name: editName,
-                    encrypted_data: encrypted
-                })
-            });
-
-            if (res.ok) {
-                setUploadProgress(100);
-                setTimeout(() => {
-                    setUploadProgress(0);
-                    setStatusMessage('');
-                    setIsEditModalOpen(false);
-                    setSecretToEdit(null);
-                    setDecryptedSecrets(prev => ({ ...prev, [secretToEdit.id]: editContent })); // Update local view
-                    fetchSecrets();
-                }, 500);
-            }
-        } catch (error) {
-            setUploadProgress(0);
-            console.error("Update failed", error);
-            alert("Update failed");
-        }
-    };
-
-    const handleShareSecret = async () => {
-        if (!selectedUser || !secretToShare) return;
-
-        try {
-            setUploadProgress(10);
-            setStatusMessage("Processing...");
-
-            // 1. Decrypt the secret first (Smart Decrypt)
-            const encryptedSource = secretToShare.encrypted_data;
-            setStatusMessage("Decrypting original...");
-            const decrypted = await secureDecrypt(encryptedSource);
-            setUploadProgress(40);
-
-            // 2. Re-encrypt with recipient's public key
-            setStatusMessage("Re-encrypting for recipient...");
-            let reEncrypted;
-            const recipientKey = selectedUser.encryption_public_key;
-
-            if (recipientKey && recipientKey.length > 60) {
-                try {
-                    const res = await encryptPQC(decrypted, recipientKey);
-                    reEncrypted = JSON.stringify(res);
-                } catch (e) {
-                    throw new Error("TrustKeys required to share with this user.");
-                }
-            } else {
-                // Standard MetaMask Encryption
-                reEncrypted = encryptData(decrypted, recipientKey);
-            }
-            setUploadProgress(70);
-
-            // 3. Share via API
-            setStatusMessage("Sharing...");
-            const res = await fetch(API_ENDPOINTS.SECRETS.SHARE, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    secret_id: secretToShare.id,
-                    grantee_address: selectedUser.address,
-                    encrypted_key: reEncrypted,
-                    expires_in: expiry > 0 ? expiry : null
-                })
-            });
-
-            if (res.ok) {
-                setUploadProgress(100);
-                setTimeout(() => {
-                    setUploadProgress(0);
-                    setStatusMessage('');
-                    alert(`Secret shared with ${selectedUser.username || selectedUser.address}!`);
-                    setIsShareModalOpen(false);
-                    setSecretToShare(null);
-                    setSelectedUser(null);
-                }, 500);
-            } else {
-                setUploadProgress(0);
-                const errorData = await res.json();
-                alert(`Failed to share secret: ${errorData.detail || 'Unknown error'}`);
-            }
-        } catch (error) {
-            setUploadProgress(0);
-            console.error("Failed to share secret", error);
-            alert('Failed to share secret: ' + error.message);
-        }
-    };
-
-    const handleCreateSecret = async (e) => {
-        e.preventDefault();
-
-        // Validation
-        if (!newSecretName) {
-            alert("Please enter a name for the secret.");
-            return;
-        }
-        if (contentType === 'text' && !newSecretContent) {
-            alert("Please enter secret text or switch to File upload.");
-            return;
-        }
-        if (contentType === 'file') {
-            if (!selectedFile) {
-                alert("Please select a file to upload.");
-                return;
-            }
-            if (selectedFile.size > MAX_FILE_SIZE) {
-                alert(`File content is too large. Limit is 5MB.`);
-                return;
-            }
-        }
-
-        try {
-            if (!encryptionPublicKey) {
-                alert("Encryption public key missing. Please reconnect.");
-                return;
-            }
-
-            if (isSigned && authType !== 'trustkeys') {
-                alert("Signing requires TrustKeys login (PQC).");
-                return;
-            }
-
-            setUploadProgress(10);
-            setStatusMessage("Reading...");
-
-            let rawContent;
-            if (contentType === 'file') {
-                // Convert file to Base64
-                const base64 = await readFileAsBase64(selectedFile);
-                rawContent = JSON.stringify({
-                    type: 'file',
-                    name: selectedFile.name,
-                    mime: selectedFile.type,
-                    content: base64
-                });
-            } else {
-                rawContent = newSecretContent;
-            }
-
-            // Signing Logic
-            let payloadToEncrypt = rawContent;
-            let secretType = 'standard';
-
-            if (isSigned) {
-                setStatusMessage("Signing...");
-                // 1. Sign
-                const signature = await signPQC(rawContent); // Sign the EXACT content string
-
-                // 2. Wrap
-                const signedPayload = {
-                    content: rawContent,
-                    signature: signature,
-                    signerPublicKey: pqcAccount
-                };
-                payloadToEncrypt = JSON.stringify(signedPayload);
-                secretType = 'signed_document';
-            }
-
-            setUploadProgress(40);
-            setStatusMessage("Encrypting...");
-
-            // Artificial delay for small files so user sees the UI
-            await new Promise(r => setTimeout(r, 200));
-
-            let encrypted;
-            if (authType === 'trustkeys') {
-                // PQC Encryption
-                const res = await encryptPQC(payloadToEncrypt, encryptionPublicKey);
-                encrypted = JSON.stringify(res);
-            } else {
-                // Standard Encryption
-                encrypted = encryptData(payloadToEncrypt, encryptionPublicKey);
-            }
-
-            setUploadProgress(70);
-            setStatusMessage("Saving...");
-
-            const createRes = await fetch(API_ENDPOINTS.SECRETS.CREATE, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    name: newSecretName,
-                    type: secretType,
-                    encrypted_data: encrypted
-                })
-            });
-
-            if (createRes.ok) {
-                setUploadProgress(100);
-                setStatusMessage("Done!");
-                await new Promise(r => setTimeout(r, 500));
-
-                setNewSecretName('');
-                setNewSecretContent('');
-                setSelectedFile(null);
-                setContentType('text');
-                setIsCreating(false);
-                setIsSigned(false); // Reset
-                setUploadProgress(0);
-                setStatusMessage('');
-                fetchSecrets();
-            } else {
-                setUploadProgress(0);
-                setStatusMessage('');
-                const err = await createRes.text();
-                alert("Failed to save: " + err);
-            }
-        } catch (error) {
-            console.error("Failed to create secret", error);
-            alert("Failed to create secret: " + error.message);
-            setUploadProgress(0);
-            setStatusMessage('');
-        }
-    };
-
-    const readFileAsBase64 = (file) => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result); // Returns data:mime;base64,...
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    };
-
-    const handleDownload = (jsonContent) => {
-        try {
-            const fileData = JSON.parse(jsonContent);
-            if (fileData.type !== 'file') return;
-
-            // Create Blob from Base64
-            // Data URL format: "data:image/png;base64,....."
-            const link = document.createElement('a');
-            link.href = fileData.content;
-            link.download = fileData.name;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        } catch (e) {
-            console.error("Download failed", e);
-        }
-    };
-
-    const handleVerify = async (docData) => {
-        try {
-            setStatusMessage("Verifying Signature...");
-            setUploadProgress(20);
-
-            if (!docData.signature || !docData.signerPublicKey) {
-                alert("Invalid document format for verification.");
-                setUploadProgress(0);
-                return;
-            }
-
-            const isValid = await verifySignaturePQC(docData.content, docData.signature, docData.signerPublicKey);
-            setUploadProgress(60);
-
-            // Resolve User
-            let signerInfo = null;
-            try {
-                const res = await fetch(API_ENDPOINTS.USERS.RESOLVE, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address: docData.signerPublicKey })
-                });
-                if (res.ok) {
-                    signerInfo = await res.json();
-                }
-            } catch (e) {
-                console.warn("Could not resolve signer user", e);
-            }
-
-            setVerificationResult({
-                valid: isValid,
-                signer: signerInfo,
-                publicKey: docData.signerPublicKey
-            });
-
-            setUploadProgress(100);
-            setTimeout(() => {
-                setUploadProgress(0);
-                setStatusMessage('');
-            }, 500);
-
-        } catch (e) {
-            console.error("Verification failed", e);
-            setUploadProgress(0);
-            setStatusMessage('');
-            alert("Verification error: " + e.message);
-        }
-    };
-
-    const renderDecryptedContent = (rawContent, secretItem) => {
-        let content = rawContent;
-        let isSignedDoc = false;
-        let signedPayload = null;
-
-        // Check if it's a Signed Document wrapper
-        try {
-            const parsed = JSON.parse(rawContent);
-            if (parsed.signature && parsed.signerPublicKey && parsed.content) {
-                isSignedDoc = true;
-                signedPayload = parsed;
-                content = parsed.content; // The actual data
-            }
-        } catch (e) {
-            // Not a signed wrapper, standard content
-        }
-
-        // Inner Content Rendering (File or Text)
-        let innerDisplay = content;
-        try {
-            const parsedInner = JSON.parse(content);
-            if (parsedInner && parsedInner.type === 'file' && parsedInner.content) {
-                innerDisplay = (
-                    <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2 text-indigo-300">
-                            <FileText className="w-4 h-4" />
-                            <span className="font-medium">{parsedInner.name}</span>
-                            <span className="text-xs text-slate-500">({parsedInner.mime})</span>
-                        </div>
-                        <button
-                            onClick={() => handleDownload(content)}
-                            className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm w-fit transition-colors"
-                        >
-                            <Download className="w-4 h-4" /> Download File
-                        </button>
-                    </div>
-                );
-            }
-        } catch (e) { }
-
-        return (
-            <div className="space-y-4">
-                {isSignedDoc && (
-                    <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
-                            <FileSignature className="w-5 h-5" />
-                            <span className="font-medium text-sm">Digitally Signed Document</span>
-                        </div>
-                        <button
-                            onClick={() => handleVerify(signedPayload)}
-                            className="text-xs px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-500 transition-colors"
-                        >
-                            Verify Signature
-                        </button>
-                    </div>
-                )}
-
-                {verificationResult && isSignedDoc && verificationResult.publicKey === signedPayload.signerPublicKey && (
-                    <div className={`p-3 rounded-lg border ${verificationResult.valid ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
-                        <div className="flex items-start gap-3">
-                            {verificationResult.valid ? (
-                                <BadgeCheck className="w-5 h-5 text-emerald-500 mt-0.5" />
-                            ) : (
-                                <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5" />
-                            )}
-                            <div>
-                                <h4 className={`text-sm font-semibold ${verificationResult.valid ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
-                                    {verificationResult.valid ? "Signature Valid" : "Signature Invalid"}
-                                </h4>
-                                {verificationResult.valid && (
-                                    <div className="text-xs text-emerald-600 dark:text-emerald-500 mt-1 space-y-1">
-                                        <p>Signed by: <span className="font-semibold">{verificationResult.signer ? verificationResult.signer.username : "Unknown User"}</span></p>
-                                        <p className="font-mono opacity-80 break-all">{verificationResult.publicKey}</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                <div
-                    style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#f8fafc', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', color: theme === 'dark' ? '#cbd5e1' : '#1e293b' }}
-                    className="p-4 rounded-lg border font-mono text-sm whitespace-pre-wrap break-all"
-                >
-                    {innerDisplay}
-                </div>
-            </div>
-        );
-    };
-
-    const handleDecrypt = async (item, isShared = false) => {
-        try {
-            setStatusMessage("Decrypting...");
-            setUploadProgress(30);
-
-            // Artificial delay for UX perception
-            await new Promise(r => setTimeout(r, 300));
-
-            const dataToDecrypt = isShared ? item.encrypted_key : item.encrypted_data;
-            const decrypted = await secureDecrypt(dataToDecrypt);
-
-            setUploadProgress(70);
-
-            const key = isShared ? `shared_${item.id}` : item.id;
-            setDecryptedSecrets(prev => ({ ...prev, [key]: decrypted }));
-
-            setUploadProgress(100);
-            setTimeout(() => {
-                setUploadProgress(0);
-                setStatusMessage('');
-            }, 500);
-        } catch (error) {
-            console.error("Decryption failed", error);
-            setUploadProgress(0);
-            setStatusMessage('');
-            alert("Decryption failed. Ensure you have the right key.");
-        }
-    };
-
-    const handleUpdateProfile = async (e) => {
-        e.preventDefault();
-        try {
-            const res = await fetch(API_ENDPOINTS.USERS.UPDATE(user.address), {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    username: usernameInput
-                })
-            });
-
-            if (res.ok) {
-                const updatedUser = await res.json();
-                setUser(updatedUser);
-                setIsProfileOpen(false);
-            }
-        } catch (error) {
-            console.error("Failed to update profile", error);
-            alert("Failed to update profile");
-        }
-    };
+    // Nav Items
+    const navItems = [
+        { id: 'secrets', label: 'Secrets', icon: <Lock className="w-4 h-4" /> },
+        { id: 'multisig', label: 'Multisig', icon: <FolderGit2 className="w-4 h-4" /> },
+    ];
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 p-6 transition-colors duration-200">
+            <GlobalProgressBar progress={globalProgress} message={globalStatus} />
+
+            {/* Header */}
             <header className="max-w-5xl mx-auto flex flex-col sm:flex-row gap-4 justify-between items-center mb-10">
                 <div className="flex items-center gap-3 w-full sm:w-auto justify-center sm:justify-start">
                     <div className="w-10 h-10 bg-indigo-500/20 rounded-lg flex items-center justify-center">
@@ -790,23 +143,19 @@ export default function Dashboard() {
                     )}
 
                     <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-slate-800">
+                        {/* User Profile Trigger */}
                         <button
                             onClick={() => setIsProfileOpen(true)}
-                            className="flex items-center gap-3 text-left hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-lg transition-colors"
+                            className="text-right hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-lg transition-colors text-left"
                         >
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-medium text-sm">
-                                {user?.username?.[0]?.toUpperCase() || 'U'}
-                            </div>
-                            <div className="hidden md:block text-sm">
-                                <div className="font-medium text-slate-900 dark:text-white">{user?.username || 'User'}</div>
-                                <div className="text-slate-500 text-xs truncate max-w-[100px]" title={currentDisplayAccount}>
-                                    {currentDisplayAccount ? `${currentDisplayAccount.substring(0, 6)}...${currentDisplayAccount.substring(currentDisplayAccount.length - 4)}` : 'Connected'}
-                                </div>
+                            <div className="font-semibold text-sm text-slate-900 dark:text-white">{user?.username || 'User'}</div>
+                            <div className="text-xs text-slate-500 font-mono">
+                                {currentDisplayAccount ? `${currentDisplayAccount.substring(0, 6)}...${currentDisplayAccount.substring(currentDisplayAccount.length - 4)}` : 'No Account'}
                             </div>
                         </button>
                         <button
                             onClick={logout}
-                            className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                            className="p-2 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                             title="Logout"
                         >
                             <LogOut className="w-5 h-5" />
@@ -815,650 +164,158 @@ export default function Dashboard() {
                 </div>
             </header>
 
-            {/* Navigation Tabs */}
-            <div className="max-w-5xl mx-auto mb-6 flex justify-center">
-                <nav className="flex items-center gap-1 bg-slate-200/50 dark:bg-slate-800/50 p-1 rounded-xl">
-                    <button
-                        onClick={() => setCurrentView('secrets')}
-                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${currentView === 'secrets' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800'}`}
-                    >
-                        <Lock className="w-4 h-4" /> Secrets
-                    </button>
-                    <button
-                        onClick={() => setCurrentView('messenger')}
-                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${currentView === 'messenger' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800'}`}
-                    >
-                        <MessageSquare className="w-4 h-4" /> Messages
-                    </button>
-                </nav>
-            </div>
+            {/* Main Content */}
+            <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
+                {/* Sidebar Navigation */}
+                <div className="lg:col-span-1 space-y-6">
+                    <nav className="space-y-1">
+                        {navItems.map(item => (
+                            <button
+                                key={item.id}
+                                onClick={() => setCurrentView(item.id)}
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium ${currentView === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-900'}`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    {item.icon}
+                                    {item.label}
+                                </div>
+                                {item.id === 'multisig' && actionRequiredCount > 0 && (
+                                    <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                        {actionRequiredCount}
+                                    </span>
+                                )}
+                            </button>
+                        ))}
+                        {/* Messenger Tab */}
+                        <button
+                            onClick={() => setCurrentView('messenger')}
+                            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium ${currentView === 'messenger' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-900'}`}
+                        >
+                            <div className="flex items-center gap-3">
+                                <span className="text-lg">💬</span> Messenger
+                            </div>
+                            {unreadCount > 0 && (
+                                <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                    {unreadCount}
+                                </span>
+                            )}
+                        </button>
+                    </nav>
 
-            <main className="max-w-5xl mx-auto">
-                {currentView === 'messenger' ? (
-                    <div className="h-[calc(100vh-200px)]">
-                        <Messenger />
+                    {/* Quick Stats or Info */}
+                    <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800">
+                        <h4 className="font-bold text-slate-900 dark:text-white mb-4 text-sm uppercase tracking-wider">Storage</h4>
+                        <div className="space-y-3">
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Secrets</span>
+                                <span className="font-medium text-slate-900 dark:text-white">{secrets.length}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Multisig</span>
+                                <span className="font-medium text-slate-900 dark:text-white">{workflows.length}</span>
+                            </div>
+                        </div>
                     </div>
-                ) : (
-                    <>
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Your Secrets</h2>
-                            <div className="flex gap-2">
+                </div>
+
+                {/* Main View Area */}
+                <div className="lg:col-span-3">
+                    {currentView === 'secrets' && (
+                        <>
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Active Secrets</h2>
                                 <button
-                                    onClick={() => setIsCreating(!isCreating)}
-                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                                    onClick={() => setIsCreating(true)}
+                                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium shadow-lg shadow-indigo-500/20 hover:-translate-y-0.5 transition-all"
                                 >
-                                    <Plus className="w-4 h-4" />
-                                    New Secret
+                                    <Plus className="w-5 h-5" /> New Secret
                                 </button>
+                            </div>
+
+                            {isCreating && (
+                                <CreateSecret
+                                    onCreate={handleCreateWrapper}
+                                    onCancel={() => setIsCreating(false)}
+                                />
+                            )}
+
+                            <SecretList
+                                secrets={secrets}
+                                decryptedSecrets={decryptedSecrets}
+                                onDecrypt={handleDecrypt}
+                                onEdit={(s) => { /* Handle Edit logic or Modal */ alert("Edit not fully extracted yet, please verify standard flow"); }}
+                                onDelete={deleteSecret}
+                                onShare={openShareModal}
+                                loading={secretsLoading}
+                                authType={authType}
+                            />
+                        </>
+                    )}
+
+                    {currentView === 'multisig' && (
+                        <>
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Multisig Workflows</h2>
                                 <button
                                     onClick={() => setIsMultisigCreateOpen(true)}
-                                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium shadow-lg shadow-indigo-500/20 hover:-translate-y-0.5 transition-all"
                                 >
-                                    <Workflow className="w-4 h-4" />
-                                    New Workflow
+                                    <Plus className="w-5 h-5" /> New Workflow
                                 </button>
                             </div>
+
+                            <MultisigList
+                                workflows={workflows}
+                                loading={workflowsLoading}
+                                onSelect={(wf) => setSelectedWorkflow(wf)}
+                                onCreate={() => setIsMultisigCreateOpen(true)}
+                            />
+                        </>
+                    )}
+
+                    {currentView === 'messenger' && (
+                        <div className="h-[600px]">
+                            <Messenger />
                         </div>
+                    )}
+                </div>
+            </main>
 
-                        {/* Pending Signatures Section */}
-                        {workflows.some(w => w.status !== 'completed' && w.signers.find(s => s.user_address === user.address && !s.has_signed)) && (
-                            <div className="mb-8 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
-                                <h3 className="text-lg font-semibold text-amber-800 dark:text-amber-400 mb-4 flex items-center gap-2">
-                                    <Shield className="w-5 h-5" /> Pending Signatures
-                                </h3>
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                    {workflows.filter(w => w.status !== 'completed' && w.signers.find(s => s.user_address === user.address && !s.has_signed)).map(w => (
-                                        <div key={w.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-amber-200 dark:border-amber-800 shadow-sm hover:shadow-md transition-shadow">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div className="font-medium text-slate-900 dark:text-white truncate" title={w.name}>{w.name}</div>
-                                                <div className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">Action Required</div>
-                                            </div>
-                                            <div className="text-sm text-slate-500 mb-4">
-                                                Requested by: {w.owner?.username || w.owner_address.substring(0, 8)}
-                                            </div>
-                                            <button
-                                                onClick={() => setSelectedWorkflow(w)}
-                                                className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors"
-                                            >
-                                                Review & Sign
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+            {/* Modals */}
+            {selectedWorkflow && (
+                <MultisigWorkflow
+                    workflow={selectedWorkflow}
+                    onClose={() => setSelectedWorkflow(null)}
+                    onUpdate={handleMultisigUpdate}
+                    setUploadProgress={updateProgress}
+                    setStatusMessage={(msg) => updateProgress(undefined, msg)}
+                />
+            )}
 
-                        {/* My Workflows Section */}
-                        {workflows.length > 0 && (
-                            <div className="mb-10">
-                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                                    <Workflow className="w-5 h-5" /> Multisig Workflows
-                                </h3>
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                    {workflows.map(w => (
-                                        <div key={w.id} onClick={() => setSelectedWorkflow(w)} className="cursor-pointer bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div className="font-medium text-slate-900 dark:text-white truncate" title={w.name}>{w.name}</div>
-                                                {w.status === 'completed' ? (
-                                                    <div className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">Completed</div>
-                                                ) : (
-                                                    <div className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full">Pending</div>
-                                                )}
-                                            </div>
-                                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mb-3 overflow-hidden">
-                                                <div
-                                                    className={`h-full ${w.status === 'completed' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-                                                    style={{ width: `${(w.signers.filter(s => s.has_signed).length / w.signers.length) * 100}%` }}
-                                                />
-                                            </div>
-                                            <div className="flex justify-between text-xs text-slate-500">
-                                                <span>{w.signers.filter(s => s.has_signed).length}/{w.signers.length} Signed</span>
-                                                <span>{new Date(w.created_at).toLocaleDateString()}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+            {isMultisigCreateOpen && (
+                <MultisigCreateModal
+                    isOpen={isMultisigCreateOpen}
+                    onClose={() => setIsMultisigCreateOpen(false)}
+                    onCreated={handleMultisigCreateSuccess}
+                    secrets={secrets}
+                />
+            )}
 
-                        {
-                            isProfileOpen && (
-                                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
-                                        <div className="flex justify-between items-center mb-6">
-                                            <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Edit Profile</h3>
-                                            <button onClick={() => setIsProfileOpen(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                                                <X className="w-5 h-5" />
-                                            </button>
-                                        </div>
+            <ShareModal
+                isOpen={isShareModalOpen}
+                onClose={() => setIsShareModalOpen(false)}
+                secret={secretToShare}
+                onShare={shareSecret}
+            />
 
-                                        <form onSubmit={handleUpdateProfile} className="space-y-4">
-                                            <div>
-                                                <label className="block text-sm font-medium text-slate-400 mb-1">Username</label>
-                                                <input
-                                                    type="text"
-                                                    value={usernameInput}
-                                                    onChange={(e) => setUsernameInput(e.target.value)}
-                                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                                    placeholder="Set a username"
-                                                />
-                                            </div>
+            <ProfileModal
+                isOpen={isProfileOpen}
+                onClose={() => setIsProfileOpen(false)}
+            />
 
-                                            <DisplayField
-                                                label={authType === 'trustkeys' ? "ML-DSA (Dilithium) / User ID" : "Wallet Address"}
-                                                value={currentDisplayAccount}
-                                            />
-
-                                            <DisplayField
-                                                label={authType === 'trustkeys' ? "ML-KEM (Kyber) / Encryption Key" : "Public Key"}
-                                                value={encryptionPublicKey}
-                                            />
-
-                                            <div className="flex justify-end gap-3 mt-6">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setIsProfileOpen(false)}
-                                                    className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                                                >
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    type="submit"
-                                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
-                                                >
-                                                    Save Changes
-                                                </button>
-                                            </div>
-                                        </form>
-                                    </div>
-                                </div>
-                            )
-                        }
-
-                        {isShareModalOpen && (
-                            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95 max-h-[85vh] flex flex-col">
-                                    <div className="flex justify-between items-center mb-6 shrink-0">
-                                        <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Manage Access</h3>
-                                        <button onClick={() => setIsShareModalOpen(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                                            <X className="w-5 h-5" />
-                                        </button>
-                                    </div>
-
-                                    <div className="mb-4 shrink-0">
-                                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">Secret: <span className="text-slate-900 dark:text-white font-medium">{secretToShare?.name}</span></p>
-                                    </div>
-
-                                    <div className="overflow-y-auto flex-1 pr-2">
-                                        {/* Access List - Visible at Top if exists */}
-                                        <div className="mb-6">
-                                            <h4 className="text-sm font-medium text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-                                                <User className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                                                Who has access ({accessList.length})?
-                                            </h4>
-                                            <div className="space-y-2">
-                                                {accessList.length === 0 ? (
-                                                    <div className="text-sm text-slate-500 italic p-3 bg-slate-50 dark:bg-slate-950/50 rounded-lg border border-slate-200 dark:border-slate-800/50">
-                                                        No one yet. Only you have access.
-                                                    </div>
-                                                ) : (
-                                                    accessList.map(grant => (
-                                                        <div key={grant.id} className="flex justify-between items-center p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700/50">
-                                                            <div className="min-w-0">
-                                                                <div className="flex items-center gap-2 mb-0.5">
-                                                                    <User className="w-3 h-3 text-slate-400" />
-                                                                    <p className="text-sm text-slate-900 dark:text-white font-medium truncate w-40">
-                                                                        {grant.grantee?.username ? (
-                                                                            <span>{grant.grantee.username} <span className="text-slate-500 text-xs">({grant.grantee_address.slice(0, 6)}...)</span></span>
-                                                                        ) : (
-                                                                            <span>{grant.grantee_address.slice(0, 10)}...{grant.grantee_address.slice(-4)}</span>
-                                                                        )}
-                                                                    </p>
-                                                                </div>
-                                                                {grant.expires_at ? (
-                                                                    <p className="text-xs text-orange-400 flex items-center gap-1">
-                                                                        <Clock className="w-3 h-3" /> Expires: {new Date(grant.expires_at).toLocaleString()}
-                                                                    </p>
-                                                                ) : (
-                                                                    <p className="text-xs text-emerald-400/70 flex items-center gap-1">
-                                                                        <Check className="w-3 h-3" /> Permanent Details
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                            <button
-                                                                onClick={() => handleRevokeGrant(grant.id)}
-                                                                className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-                                                                title="Revoke Access"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    ))
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="border-t border-slate-800 my-4"></div>
-
-                                        {/* Add New Share */}
-                                        <h4 className="text-sm font-medium text-slate-900 dark:text-white mb-3">Add Person</h4>
-                                        <div className="mb-4">
-                                            <label className="block text-sm font-medium text-slate-400 mb-2">Search Users</label>
-                                            <div className="relative">
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                                                <input
-                                                    type="text"
-                                                    value={searchQuery}
-                                                    onChange={(e) => {
-                                                        setSearchQuery(e.target.value);
-                                                        searchUsers(e.target.value);
-                                                    }}
-                                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg pl-10 pr-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                                    placeholder="Username or address..."
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* User Results */}
-                                        {users.length > 0 && (
-                                            <div className="mb-4 border border-slate-200 dark:border-slate-800 rounded-lg p-2 bg-slate-50 dark:bg-slate-950 max-h-32 overflow-y-auto">
-                                                {users.map(u => (
-                                                    <div
-                                                        key={u.address}
-                                                        onClick={() => setSelectedUser(u)}
-                                                        className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedUser?.address === u.address ? 'bg-indigo-100 dark:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-500/30' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-                                                    >
-                                                        <span className="text-sm text-slate-900 dark:text-white">{u.username || u.address.slice(0, 10)}</span>
-                                                        {selectedUser?.address === u.address && <Check className="w-3 h-3 text-indigo-400" />}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {hasMoreUsers && users.length > 0 && (
-                                            <button
-                                                onClick={loadNextUsers}
-                                                className="w-full text-center text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 py-2 border-t border-slate-200 dark:border-slate-800 mt-2 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
-                                            >
-                                                Next
-                                            </button>
-                                        )}
-
-                                        {/* Expiry / Timebomb */}
-                                        <div className="mb-6">
-                                            <label className="block text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
-                                                <Clock className="w-3 h-3" /> Expiry (Timebomb)
-                                            </label>
-                                            <select
-                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none"
-                                                value={expiry}
-                                                onChange={(e) => setExpiry(Number(e.target.value))}
-                                            >
-                                                <option value={0}>Never expire</option>
-                                                <option value={300}>5 Minutes</option>
-                                                <option value={3600}>1 Hour</option>
-                                                <option value={86400}>1 Day</option>
-                                                <option value={604800}>1 Week</option>
-                                            </select>
-                                        </div>
-
-                                        <button
-                                            onClick={handleShareSecret}
-                                            disabled={!selectedUser}
-                                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed mb-2"
-                                        >
-                                            Share Secret
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Edit Modal */}
-                        {isEditModalOpen && (
-                            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
-                                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Edit Secret</h3>
-                                    <form onSubmit={handleUpdateSecret} className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
-                                            <input
-                                                type="text"
-                                                value={editName}
-                                                onChange={(e) => setEditName(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-400 mb-1">Content</label>
-                                            <textarea
-                                                value={editContent}
-                                                onChange={(e) => setEditContent(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white outline-none h-24"
-                                            />
-                                        </div>
-                                        <div className="flex justify-end gap-3 px-0">
-                                            <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">Cancel</button>
-                                            <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg">Save</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Create Secret Modal Content - Partial Replacement for the Create UI */}
-                        {isCreating && (
-                            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
-                                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Create New Secret</h3>
-                                    <form onSubmit={handleCreateSecret} className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
-                                            <input
-                                                type="text"
-                                                value={newSecretName}
-                                                onChange={(e) => setNewSecretName(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                                placeholder="My Secret Document"
-                                            />
-                                        </div>
-
-                                        {/* Toggle Content Type */}
-                                        <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                                            <button
-                                                type="button"
-                                                onClick={() => setContentType('text')}
-                                                className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${contentType === 'text' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                            >
-                                                Text
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setContentType('file')}
-                                                className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${contentType === 'file' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                            >
-                                                File
-                                            </button>
-                                        </div>
-
-                                        {contentType === 'text' ? (
-                                            <textarea
-                                                value={newSecretContent}
-                                                onChange={(e) => setNewSecretContent(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none h-32 resize-none"
-                                                placeholder="Enter secret content..."
-                                            />
-                                        ) : (
-                                            <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-lg p-6 text-center hover:border-indigo-500 transition-colors cursor-pointer relative">
-                                                <input
-                                                    type="file"
-                                                    onChange={(e) => setSelectedFile(e.target.files[0])}
-                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                                />
-                                                <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                                                <p className="text-sm text-slate-500">
-                                                    {selectedFile ? selectedFile.name : "Click to upload file"}
-                                                </p>
-                                                <p className="text-xs text-slate-400 mt-1">Max 5MB</p>
-                                            </div>
-                                        )}
-
-                                        {authType === 'trustkeys' && (
-                                            <div className="flex items-center gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
-                                                <div
-                                                    onClick={() => setIsSigned(!isSigned)}
-                                                    className={`w-5 h-5 rounded border border-indigo-400 flex items-center justify-center cursor-pointer transition-colors ${isSigned ? 'bg-indigo-600 border-indigo-600' : 'bg-transparent'}`}
-                                                >
-                                                    {isSigned && <Check className="w-3.5 h-3.5 text-white" />}
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-medium text-indigo-900 dark:text-indigo-200 select-none cursor-pointer" onClick={() => setIsSigned(!isSigned)}>Sign Document</p>
-                                                    <p className="text-xs text-indigo-600/70 dark:text-indigo-400/70">Digitally sign with your PQC Key</p>
-                                                </div>
-                                            </div>
-                                        )}
-
-
-
-                                        <div className="flex justify-end gap-3 pt-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsCreating(false)}
-                                                className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                                            >
-                                                Cancel
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                disabled={uploadProgress > 0}
-                                                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
-                                            >
-                                                {uploadProgress > 0 ? 'Processing...' : (isSigned ? 'Sign & Save' : 'Save Secret')}
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
-
-                        {
-                            loading ? (
-                                <div className="flex justify-center py-12">
-                                    <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
-                                </div>
-                            ) : secrets.length === 0 ? (
-                                <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
-                                    <p className="text-slate-500">No secrets found. Create one to get started.</p>
-                                </div>
-                            ) : (
-                                <div className="grid gap-4">
-                                    {secrets.map(s => (
-                                        <div
-                                            key={s.id}
-                                            style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
-                                            className="border rounded-xl p-5 flex flex-col sm:flex-row items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all gap-4 sm:gap-0"
-                                        >
-                                            <div className="flex-1 w-full">
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div>
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <h3 className="font-semibold text-slate-900 dark:text-white">{s.name}</h3>
-                                                            {s.type === 'signed_document' && (
-                                                                <span className="text-[10px] uppercase font-bold text-indigo-500 bg-indigo-100 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded">Signed</span>
-                                                            )}
-                                                        </div>
-                                                        <p className="text-xs text-slate-500">Created: {new Date(s.created_at).toLocaleDateString()}</p>
-                                                    </div>
-                                                </div>
-
-                                                {decryptedSecrets[s.id] ? (
-                                                    <div className="mt-3 relative group">
-                                                        {renderDecryptedContent(decryptedSecrets[s.id], s)}
-                                                        <div className="flex justify-end gap-2 mt-3 opacity-10 transition-opacity group-hover:opacity-100">
-                                                            <button onClick={() => handleOpenShareModal(s)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg">
-                                                                <Share2 className="w-4 h-4" />
-                                                            </button>
-                                                            <button onClick={() => handleOpenEditModal(s)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg">
-                                                                <Edit2 className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="mt-auto pt-6 flex justify-center">
-                                                        <button
-                                                            onClick={() => handleDecrypt(s)}
-                                                            className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
-                                                        >
-                                                            <Unlock className="w-4 h-4" /> Decrypt
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div className="flex items-center gap-2 ml-0 sm:ml-4 w-full sm:w-auto justify-end border-t sm:border-t-0 border-slate-100 dark:border-slate-800 pt-3 sm:pt-0 mt-2 sm:mt-0">
-                                                {!decryptedSecrets[s.id] && (
-                                                    <button
-                                                        onClick={() => handleDecrypt(s)}
-                                                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                                        title="Decrypt"
-                                                    >
-                                                        <Unlock className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                                <button
-                                                    onClick={() => handleOpenShareModal(s)}
-                                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                                    title="Manage Access & Share"
-                                                >
-                                                    <User className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleOpenEditModal(s)}
-                                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                                    title="Edit"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDeleteSecret(s.id)}
-                                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )
-                        }
-
-                        <div className="mt-12 mb-6">
-                            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Shared with You</h2>
-                        </div>
-
-                        {
-                            loading ? (
-                                <div className="flex justify-center py-12">
-                                    <RefreshCw className="w-6 h-6 animate-spin text-slate-500" />
-                                </div>
-                            ) : sharedSecrets.length === 0 ? (
-                                <div className="text-center py-12 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl">
-                                    <p className="text-slate-500">No secrets shared with you yet.</p>
-                                </div>
-                            ) : (
-                                <div className="grid gap-4">
-                                    {sharedSecrets.map(grant => (
-                                        <div
-                                            key={`shared-${grant.id}`}
-                                            style={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0' }}
-                                            className="border rounded-xl p-5 flex items-start justify-between group hover:border-slate-300 dark:hover:border-slate-700 transition-all"
-                                        >
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-3 mb-2">
-                                                    <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                                                        <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                                                    </div>
-                                                    <h3 className="font-medium text-slate-900 dark:text-white">{grant.secret?.name || 'Unknown Secret'}</h3>
-                                                    <span className="text-xs text-slate-500">
-                                                        {new Date(grant.created_at).toLocaleDateString()}
-                                                    </span>
-                                                    <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-xs rounded-full">
-                                                        Shared by {grant.secret?.owner?.username || grant.secret?.owner?.address?.slice(0, 6) + '...'}
-                                                    </span>
-                                                </div>
-
-                                                {decryptedSecrets[`shared_${grant.id}`] ? (
-                                                    <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-200 font-mono text-sm break-all">
-                                                        {renderDecryptedContent(decryptedSecrets[`shared_${grant.id}`])}
-                                                    </div>
-                                                ) : (
-                                                    <div className="mt-3 text-sm text-slate-500 italic flex items-center gap-2">
-                                                        <Lock className="w-3 h-3" />
-                                                        Encrypted Content
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div className="flex items-center gap-2 ml-4">
-                                                {!decryptedSecrets[`shared_${grant.id}`] && (
-                                                    <button
-                                                        onClick={() => handleDecrypt(grant, true)}
-                                                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                                        title="Decrypt"
-                                                    >
-                                                        <Unlock className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                                <button
-                                                    onClick={() => handleRevokeGrant(grant.id)}
-                                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
-                                                    title="Remove"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )
-                        }
-                    </>
-                )}
-            </main >
             {showVaultManager && (
                 <VaultManager onClose={() => setShowVaultManager(false)} />
             )}
-
-            {
-                isMultisigCreateOpen && (
-                    <MultisigCreateModal
-                        isOpen={isMultisigCreateOpen}
-                        onClose={() => setIsMultisigCreateOpen(false)}
-                        onCreated={() => {
-                            fetchWorkflows();
-                            fetchSecrets(); // Might have new secret
-                        }}
-                    />
-                )
-            }
-
-            {
-                selectedWorkflow && (
-                    <MultisigWorkflow
-                        workflow={selectedWorkflow}
-                        onClose={() => setSelectedWorkflow(null)}
-                        setUploadProgress={setUploadProgress}
-                        setStatusMessage={setStatusMessage}
-                        onUpdate={(updated) => {
-                            setWorkflows(prev => prev.map(w => w.id === updated.id ? updated : w));
-                            setSelectedWorkflow(updated); // Update the active modal view
-                            if (updated.status === 'completed') {
-                                fetchSharedSecrets(); // Might have access now
-                            }
-                        }}
-                    />
-                )
-            }
-
-            {/* Global Progress Bar (Toast Style) */}
-            {uploadProgress > 0 && (
-                <div className="fixed bottom-6 right-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-4 w-80 z-[100] animate-in slide-in-from-bottom-5">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                            <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
-                            {statusMessage || "Processing..."}
-                        </span>
-                        <span className="text-xs text-slate-500 font-mono">{uploadProgress}%</span>
-                    </div>
-                    <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-300 ease-out"
-                            style={{ width: `${uploadProgress}%` }}
-                        />
-                    </div>
-                </div>
-            )}
-        </div >
+        </div>
     );
 }
