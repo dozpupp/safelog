@@ -3,6 +3,7 @@ backend/__pycache__/
 backend/*.pyc
 backend/.pytest_cache/
 backend/sql_app.db
+backend/safelog.db
 backend/.venv/
 backend/venv/
 

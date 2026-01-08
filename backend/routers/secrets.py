@@ -158,9 +158,17 @@ def get_secret_access(secret_id: int, current_user: models.User = Depends(get_cu
     active_grants = []
     dirty = False
     for grant in all_grants:
-        if grant.expires_at and grant.expires_at.replace(tzinfo=timezone.utc) <= now:
-            db.delete(grant)
-            dirty = True
+        if grant.expires_at:
+            # Safe datetime comparison: ensure both are aware or handle naive as UTC
+            grant_expires = grant.expires_at
+            if grant_expires.tzinfo is None:
+                grant_expires = grant_expires.replace(tzinfo=timezone.utc)
+            
+            if grant_expires <= now:
+                db.delete(grant)
+                dirty = True
+            else:
+                active_grants.append(grant)
         else:
             active_grants.append(grant)
     
@@ -183,10 +191,16 @@ def get_shared_secrets(current_user: models.User = Depends(get_current_user), db
     dirty = False
     for g in grants:
         # Check expiry
-        if g.expires_at and g.expires_at.replace(tzinfo=timezone.utc) <= now:
-            db.delete(g)
-            dirty = True
-            continue
+        # Check expiry
+        if g.expires_at:
+            g_expires = g.expires_at
+            if g_expires.tzinfo is None:
+                 g_expires = g_expires.replace(tzinfo=timezone.utc)
+            
+            if g_expires <= now:
+                db.delete(g)
+                dirty = True
+                continue
         valid_grants.append(g)
     
     if dirty:
