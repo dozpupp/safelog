@@ -15,6 +15,7 @@ import GlobalProgressBar from './common/GlobalProgressBar';
 import SecretList from './dashboard/SecretList';
 import CreateSecret from './dashboard/CreateSecret';
 import ShareModal from './dashboard/ShareModal';
+import SecretDetailsModal from './dashboard/SecretDetailsModal';
 import VaultManager from './VaultManager';
 import MultisigWorkflow from './MultisigWorkflow';
 import MultisigCreateModal from './MultisigCreateModal';
@@ -75,6 +76,10 @@ export default function Dashboard() {
     const [secretToShare, setSecretToShare] = useState(null);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
+    // Secret Details State
+    const [selectedSecretDetails, setSelectedSecretDetails] = useState(null);
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
+
     // Profile State
     const [isProfileOpen, setIsProfileOpen] = useState(false);
 
@@ -82,6 +87,11 @@ export default function Dashboard() {
     const openShareModal = (secret) => {
         setSecretToShare(secret);
         setIsShareModalOpen(true);
+    };
+
+    const handleViewDetails = (secret) => {
+        setSelectedSecretDetails(secret);
+        setShowDetailsModal(true);
     };
 
     const handleCreateWrapper = async (name, type, content, isSigned) => {
@@ -241,11 +251,13 @@ export default function Dashboard() {
 
                             <SecretList
                                 secrets={secrets}
+                                sharedSecrets={sharedSecrets}
                                 decryptedSecrets={decryptedSecrets}
                                 onDecrypt={handleDecrypt}
                                 onEdit={(s) => { /* Handle Edit logic or Modal */ alert("Edit not fully extracted yet, please verify standard flow"); }}
                                 onDelete={deleteSecret}
                                 onShare={openShareModal}
+                                onViewDetails={handleViewDetails}
                                 loading={secretsLoading}
                                 authType={authType}
                             />
@@ -306,6 +318,12 @@ export default function Dashboard() {
                 onClose={() => setIsShareModalOpen(false)}
                 secret={secretToShare}
                 onShare={shareSecret}
+            />
+
+            <SecretDetailsModal
+                isOpen={showDetailsModal}
+                onClose={() => setShowDetailsModal(false)}
+                secret={selectedSecretDetails}
             />
 
             <ProfileModal

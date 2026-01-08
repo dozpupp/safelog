@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Lock, Unlock, Copy, Check, FileText, Share2, Trash2, Edit2, FileSignature, BadgeCheck, AlertTriangle, Download } from 'lucide-react';
+import { Lock, Unlock, Copy, Check, FileText, Share2, Trash2, Edit2, FileSignature, BadgeCheck, AlertTriangle, Download, Info, Users } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { verifySignaturePQC } from '../../utils/crypto';
 import API_ENDPOINTS from '../../config';
 
-const SecretItem = ({ secret, decryptedContent, onDecrypt, onEdit, onDelete, onShare, authType }) => {
+const SecretItem = ({ secret, decryptedContent, onDecrypt, onEdit, onDelete, onShare, onViewDetails, authType }) => {
     const { theme } = useTheme();
     const [verificationResult, setVerificationResult] = useState(null);
     const [verifying, setVerifying] = useState(false);
@@ -115,10 +115,10 @@ const SecretItem = ({ secret, decryptedContent, onDecrypt, onEdit, onDelete, onS
             <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${secret.type === 'file'
-                            ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                            : secret.type === 'signed_document'
-                                ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
-                                : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
+                        ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                        : secret.type === 'signed_document'
+                            ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                            : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
                         }`}>
                         {secret.type === 'file' ? <FileText className="w-5 h-5" /> :
                             secret.type === 'signed_document' ? <FileSignature className="w-5 h-5" /> :
@@ -147,6 +147,11 @@ const SecretItem = ({ secret, decryptedContent, onDecrypt, onEdit, onDelete, onS
                     <button onClick={() => onDelete(secret.id)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-500 transition-colors" title="Delete">
                         <Trash2 className="w-4 h-4" />
                     </button>
+                    {onViewDetails && !secret.isShared && (
+                        <button onClick={() => onViewDetails(secret)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-indigo-500 transition-colors" title="Details & Access">
+                            <Users className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
             </div>
 
