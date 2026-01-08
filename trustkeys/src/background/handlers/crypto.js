@@ -50,6 +50,20 @@ export const handleEncrypt = async (request) => {
     return { success: true, result };
 };
 
+export const handleGenerateSessionKey = async () => {
+    const key = await generateSessionKey();
+    return { success: true, key };
+};
+
+export const handleWrapSessionKey = async (request) => {
+    // wrapSessionKey(sessionKeyHex, publicKeyHex)
+    if (!request.sessionKey || !request.publicKey) {
+        throw new Error("Missing sessionKey or publicKey");
+    }
+    const result = await wrapSessionKey(request.sessionKey, request.publicKey);
+    return { success: true, wrappedKey: result };
+};
+
 export const handleDecryptAsync = async (request, sender, sendResponse) => {
     if (state.isLocked) throw new Error("Locked");
     const checkOrigin = sender.origin || request.origin;

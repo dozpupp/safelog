@@ -29,12 +29,14 @@ const initializeStorage = async () => {
         console.warn("Session restore failed", e);
     }
 };
-initializeStorage();
+// Initialize storage and capture promise
+let initPromise = initializeStorage();
 
 // Message Handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
         try {
+            await initPromise; // Wait for initialization to complete
             updateActivity();
 
             switch (request.type) {
@@ -212,12 +214,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     break;
                 }
                 case 'GENERATE_SESSION_KEY': {
-                    // Need import
-                    // sendResponse({ success: true, key: ... });
+                    const res = await crypto.handleGenerateSessionKey();
+                    sendResponse(res);
                     break;
                 }
                 case 'WRAP_SESSION_KEY': {
-                    // Need logic
+                    const res = await crypto.handleWrapSessionKey(request);
+                    sendResponse(res);
                     break;
                 }
                 case 'UNWRAP_SESSION_KEY': {

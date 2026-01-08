@@ -337,6 +337,12 @@ export function useMessenger() {
                                 // Save key to state
                                 setSessionKeys(prev => ({ ...prev, [payload.sid]: sessionKey }));
 
+                                // Update Active Session ID for this partner
+                                const partnerAddr = msg.sender_address.toLowerCase() === user.address.toLowerCase()
+                                    ? msg.recipient_address.toLowerCase()
+                                    : msg.sender_address.toLowerCase();
+                                setActiveSessionIds(prev => ({ ...prev, [partnerAddr]: payload.sid }));
+
                                 // Decrypt
                                 const plainText = await decryptWithSessionKey(payload.ct, sessionKey);
                                 setActiveConversation(prev => ({
