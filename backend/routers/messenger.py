@@ -172,5 +172,13 @@ async def websocket_endpoint(websocket: WebSocket):
         except WebSocketDisconnect:
             manager.disconnect(websocket, user_address)
             
-    except Exception:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    except WebSocketDisconnect:
+        # Client disconnected normally or abnormally
+        manager.disconnect(websocket, None) # We might not have user_address yet if auth failed/didn't happen
+    except Exception as e:
+        print(f"WS Error: {e}")
+        # Only try to close if not already closed
+        try:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        except Exception:
+            pass

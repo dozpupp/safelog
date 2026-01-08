@@ -196,6 +196,18 @@ export function useMessenger() {
                 });
                 setSessionKeys(newKeys);
 
+                // Update Active Session ID if we found a key for the current partner
+                // We pick the session from the *latest* message from this partner ideally
+                // For now, simpler: just use this one.
+                const recentMsg = processed.find(m => m._sessionPayload && sids.includes(m._sessionPayload.sid));
+                if (recentMsg) {
+                    const pid = recentMsg.sender_address.toLowerCase() === user.address.toLowerCase()
+                        ? recentMsg.recipient_address.toLowerCase()
+                        : recentMsg.sender_address.toLowerCase();
+                    const sid = recentMsg._sessionPayload.sid;
+                    setActiveSessionIds(prev => ({ ...prev, [pid]: sid }));
+                }
+
                 // Re-process
                 return await Promise.all(processed.map(async m => {
                     if (m._sessionPayload && newKeys[m._sessionPayload.sid]) {
@@ -207,6 +219,15 @@ export function useMessenger() {
                     return m;
                 }));
             } catch (e) { console.error("Batch unwrap failed", e); }
+        } else {
+            // If we didn't unwrap, maybe we already had keys? Check processed messages for session IDs
+            const validMsg = processed.find(m => m.plainText && m._sessionPayload);
+            if (validMsg) {
+                const pid = validMsg.sender_address.toLowerCase() === user.address.toLowerCase()
+                    ? validMsg.recipient_address.toLowerCase()
+                    : validMsg.sender_address.toLowerCase();
+                setActiveSessionIds(prev => ({ ...prev, [pid]: validMsg._sessionPayload.sid }));
+            }
         }
 
         return processed;
@@ -228,7 +249,9 @@ export function useMessenger() {
             if (!sKey) {
                 sid = crypto.randomUUID();
                 sKey = await generateSessionKey();
+
                 const wRecip = await wrapSessionKey(sKey, recipientKey);
+
                 const myKey = user?.encryption_public_key || kyberKey;
                 const wSender = myKey ? await wrapSessionKey(sKey, myKey) : null;
 
