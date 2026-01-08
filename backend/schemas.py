@@ -136,6 +136,7 @@ class MultisigWorkflowResponse(MultisigWorkflowBase):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class MultisigSignatureRequest(BaseModel):
     # Reverting to 50MB. Empirical evidence shows 64KB is exceeded in some user scenarios.
