@@ -11,6 +11,7 @@ router = APIRouter(tags=["secrets"]) # Secrets and Documents mixed? Or should I 
 # Secrets
 @router.post("/secrets", response_model=schemas.SecretResponse)
 def create_secret(secret: schemas.SecretCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # 1. Create Secret (Content)
     new_secret = models.Secret(
         owner_address=current_user.address,
         name=secret.name,
@@ -18,14 +19,38 @@ def create_secret(secret: schemas.SecretCreate, current_user: models.User = Depe
         encrypted_data=secret.encrypted_data
     )
     db.add(new_secret)
+    db.flush() # Flush to get ID
+
+    # 2. Create AccessGrant for Owner (Key)
+    owner_grant = models.AccessGrant(
+        secret_id=new_secret.id,
+        grantee_address=current_user.address,
+        encrypted_key=secret.encrypted_key
+    )
+    db.add(owner_grant)
     db.commit()
     db.refresh(new_secret)
+    
+    # Manually attach encrypted_key for response
+    new_secret.encrypted_key = secret.encrypted_key
     return new_secret
 
 @router.get("/secrets", response_model=List[schemas.SecretResponse])
 def get_secrets(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Returns secrets owned by current user
-    return db.query(models.Secret).filter(models.Secret.owner_address == current_user.address).all()
+    # Fetch secrets owned by user AND their corresponding AccessGrant key
+    # We join AccessGrant to get the key efficiently
+    results = db.query(models.Secret, models.AccessGrant.encrypted_key)\
+        .join(models.AccessGrant, (models.AccessGrant.secret_id == models.Secret.id) & (models.AccessGrant.grantee_address == current_user.address))\
+        .filter(models.Secret.owner_address == current_user.address)\
+        .all()
+    
+    response = []
+    for secret, key in results:
+        # Pydantic via ORM mode will read attributes. We can attach the key dynamically.
+        secret.encrypted_key = key
+        response.append(secret)
+        
+    return response
 
 @router.put("/secrets/{secret_id}", response_model=schemas.SecretResponse)
 def update_secret(secret_id: int, secret_update: schemas.SecretCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -148,8 +173,10 @@ def get_secret_access(secret_id: int, current_user: models.User = Depends(get_cu
 def get_shared_secrets(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     
-    grants = db.query(models.AccessGrant).filter(
-        models.AccessGrant.grantee_address == current_user.address
+    # query grants where grantee is me BUT secret owner is NOT me
+    grants = db.query(models.AccessGrant).join(models.Secret).filter(
+        models.AccessGrant.grantee_address == current_user.address,
+        models.Secret.owner_address != current_user.address
     ).all()
     
     valid_grants = []

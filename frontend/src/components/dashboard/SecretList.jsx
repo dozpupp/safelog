@@ -55,7 +55,8 @@ const SecretList = ({ secrets, sharedSecrets = [], decryptedSecrets, onDecrypt, 
                                 secret={{
                                     ...grant.secret,
                                     id: grant.secret.id, // Ensure ID is preserved for display/keys
-                                    isShared: true // Marker for UI
+                                    isShared: true, // Marker for UI
+                                    encrypted_key: grant.encrypted_key // The key for ME (so I can reshare)
                                 }}
                                 decryptedContent={decryptedSecrets[`shared_${grant.id}`]}
                                 onDecrypt={() => onDecrypt(grant, true)} // Pass boolean true for isShared

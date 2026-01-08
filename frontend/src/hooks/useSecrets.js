@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePQC } from '../context/PQCContext';
 import API_ENDPOINTS from '../config';
-import { encryptData, decryptData } from '../utils/crypto';
+import { encryptData, decryptData, generateSymmetricKey, encryptSymmetric, decryptSymmetric } from '../utils/crypto';
 
 export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = {}) {
     const { token, user } = useAuth();
@@ -82,29 +82,51 @@ export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = 
     };
 
     const handleDecrypt = async (item, isShared = false) => {
-        reportProgress(10, 'Decrypting...');
+        reportProgress(10, 'Decrypting Key...');
         try {
-            const dataToDecrypt = isShared ? item.encrypted_key : item.encrypted_data;
-            const decrypted = await secureDecrypt(dataToDecrypt);
+            // Envelope Encryption Flow
+            const encKeyBlob = isShared ? item.encrypted_key : item.encrypted_key;
+            // Note: For 'secrets' list (owned), item.encrypted_key comes from the join in get_secrets.
+            // For 'shared' list, item is AccessGrant, so item.encrypted_key is direct.
+
+            if (!encKeyBlob) {
+                throw new Error("Missing encryption key. Legacy secrets are not supported.");
+            }
+
+            // 1. Decrypt AES Key
+            const fileKey = await secureDecrypt(encKeyBlob);
+
+            // 2. Decrypt Content
+            reportProgress(50, 'Decrypting Content...');
+            // encrypted_data is now a JSON string: {iv, ciphertext}
+            const encDataObj = JSON.parse(isShared ? item.secret.encrypted_data : item.encrypted_data);
+
+            const decrypted = await decryptSymmetric(encDataObj, fileKey);
+
             const key = isShared ? `shared_${item.id}` : item.id;
             setDecryptedSecrets(prev => ({ ...prev, [key]: decrypted }));
             reportProgress(100, 'Decrypted');
             setTimeout(() => reportProgress(0, ''), 500);
             return decrypted;
         } catch (e) {
+            console.error(e);
             reportProgress(0, '');
-            throw e;
+            throw new Error("Decryption failed: " + e.message);
         }
     };
 
     const createSecret = async (name, type, rawContent, isSigned = false) => {
-        reportProgress(10, 'Preparing...');
+        reportProgress(10, 'Preparing Envelope...');
         try {
+            // 1. Generate AES-256 Key
+            const fileKey = await generateSymmetricKey();
+
+            // 2. Prepare Payload (Signed or Raw)
             let payloadToEncrypt = rawContent;
             let secretType = type;
 
             if (isSigned) {
-                reportProgress(30, 'Signing...');
+                reportProgress(20, 'Signing...');
                 const signature = await signPQC(rawContent);
                 const signedPayload = {
                     content: rawContent,
@@ -115,10 +137,26 @@ export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = 
                 secretType = 'signed_document';
             }
 
-            reportProgress(50, 'Encrypting...');
-            const encrypted = await secureEncrypt(payloadToEncrypt, encryptionPublicKey);
+            // 3. Encrypt Content with AES Key
+            reportProgress(40, 'Encrypting Content (AES)...');
+            const encryptedContentIdx = await encryptSymmetric(payloadToEncrypt, fileKey);
+            // We store the JSON result string as 'encrypted_data' (which contains iv + ciphertext)
+            const encryptedDataStr = JSON.stringify(encryptedContentIdx);
 
-            reportProgress(70, 'Saving...');
+            // 4. Encrypt AES Key for Owner (Me)
+            reportProgress(60, 'Encrypting Key...');
+            let encryptedKeyForMe;
+            if (authType === 'trustkeys') {
+                // Encrypt key using PQC (Hybrid)
+                const res = await encryptPQC(fileKey, encryptionPublicKey);
+                encryptedKeyForMe = JSON.stringify(res);
+            } else {
+                // Encrypt key using MetaMask (Eth)
+                encryptedKeyForMe = encryptData(fileKey, encryptionPublicKey);
+            }
+
+            // 5. Send to API
+            reportProgress(80, 'Saving...');
             const res = await fetch(API_ENDPOINTS.SECRETS.CREATE, {
                 method: 'POST',
                 headers: {
@@ -128,7 +166,8 @@ export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = 
                 body: JSON.stringify({
                     name,
                     type: secretType,
-                    encrypted_data: encrypted
+                    encrypted_data: encryptedDataStr,
+                    encrypted_key: encryptedKeyForMe // NEW Field
                 })
             });
 
@@ -185,24 +224,27 @@ export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = 
         return res.ok;
     };
 
-    const shareSecret = async (secretId, originalEncryptedData, recipientAddress, recipientPublicKey, expiry = 0) => {
-        // 1. Decrypt Original
-        // We assume caller might pass decrypted content OR we decrypt here.
-        // Optimization: secureDecrypt reads from cache? No. 
-        // We need to decrypt.
-        const decrypted = await secureDecrypt(originalEncryptedData);
+    const shareSecret = async (secretId, originalEncryptedKey, recipientAddress, recipientPublicKey, expiry = 0) => {
+        // 1. Decrypt the File Key (AES)
+        // We need the key, not the content.
+        // The UI might pass 'originalEncryptedKey' (which is the key for ME).
+        // Wait, the function signature passed 'originalEncryptedData' in old version.
+        // We likely need to pass the encrypted_key now.
+        // Assuming the UI calls this with the Owner's 'encrypted_key'.
 
-        // 2. Re-encrypt
-        let reEncrypted;
+        const fileKey = await secureDecrypt(originalEncryptedKey);
+
+        // 2. Re-encrypt the File Key for Recipient
+        let reEncryptedKey;
         if (recipientPublicKey && recipientPublicKey.length > 60) {
             try {
-                const res = await encryptPQC(decrypted, recipientPublicKey);
-                reEncrypted = JSON.stringify(res);
+                const res = await encryptPQC(fileKey, recipientPublicKey);
+                reEncryptedKey = JSON.stringify(res);
             } catch (e) {
                 throw new Error("TrustKeys required to share with this user.");
             }
         } else {
-            reEncrypted = encryptData(decrypted, recipientPublicKey);
+            reEncryptedKey = encryptData(fileKey, recipientPublicKey);
         }
 
         // 3. API Call
@@ -215,7 +257,7 @@ export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = 
             body: JSON.stringify({
                 secret_id: secretId,
                 grantee_address: recipientAddress,
-                encrypted_key: reEncrypted,
+                encrypted_key: reEncryptedKey,
                 expires_in: expiry > 0 ? expiry : null
             })
         });

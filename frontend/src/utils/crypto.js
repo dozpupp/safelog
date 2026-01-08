@@ -258,15 +258,15 @@ export const verifySignaturePQC = async (message, signatureHex, publicKeyHex) =>
                 }
 
                 if (match) {
-                    console.log("verifySignaturePQC: Verified via Extraction (Metadata ignored)");
+                    // console.log("verifySignaturePQC: Verified via Extraction (Metadata ignored)");
                     return true;
                 } else {
                     console.warn("verifySignaturePQC: Signature valid but content mismatch.");
                     // Debug extra bytes
-                    const extra = extractedMsg.slice(msgLen);
-                    try {
-                        console.log("verifySignaturePQC: Extra bytes decoded:", new TextDecoder().decode(extra));
-                    } catch (e) { console.log("verifySignaturePQC: Extra bytes not text", extra); }
+                    // const extra = extractedMsg.slice(msgLen);
+                    // try {
+                    //     console.log("verifySignaturePQC: Extra bytes decoded:", new TextDecoder().decode(extra));
+                    // } catch (e) { console.log("verifySignaturePQC: Extra bytes not text", extra); }
                 }
             }
         } catch (e) {
@@ -458,7 +458,53 @@ export const decryptWithSessionKey = async (encryptedData, sessionKeyHex) => {
     return dec.decode(decrypted);
 };
 
+// --- Symmetric Encryption (AES-GCM 256) for Envelope / Large Files ---
 
+export const generateSymmetricKey = async () => {
+    // Generate 256-bit AES key (32 bytes)
+    const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+    return toHex(keyBytes);
+};
+
+export const encryptSymmetric = async (content, keyHex) => {
+    const keyBytes = fromHex(keyHex);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await crypto.subtle.importKey(
+        "raw", keyBytes, "AES-GCM", false, ["encrypt"]
+    );
+
+    const enc = new TextEncoder();
+    const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        enc.encode(content)
+    );
+
+    return {
+        iv: toHex(iv),
+        ciphertext: toHex(new Uint8Array(encrypted))
+    };
+};
+
+export const decryptSymmetric = async (encryptedObject, keyHex) => {
+    // encryptedObject: { iv, ciphertext }
+    const keyBytes = fromHex(keyHex);
+    const iv = fromHex(encryptedObject.iv);
+    const ciphertext = fromHex(encryptedObject.ciphertext);
+
+    const key = await crypto.subtle.importKey(
+        "raw", keyBytes, "AES-GCM", false, ["decrypt"]
+    );
+
+    const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        ciphertext
+    );
+
+    const dec = new TextDecoder();
+    return dec.decode(decrypted);
+};
 // --- Vault Security ---
 
 // Helper to derive key

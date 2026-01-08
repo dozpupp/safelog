@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from datetime import datetime, timezone
 import models, schemas
@@ -14,6 +14,7 @@ router = APIRouter(
 @router.post("/workflow", response_model=schemas.MultisigWorkflowResponse)
 def create_multisig_workflow(workflow: schemas.MultisigWorkflowCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     # 1. Create the Secret (Owned by Creator)
+    # 1. Create the Secret (Owned by Creator)
     new_secret = models.Secret(
         owner_address=current_user.address,
         name=workflow.secret_data.name,
@@ -21,7 +22,18 @@ def create_multisig_workflow(workflow: schemas.MultisigWorkflowCreate, current_u
         encrypted_data=workflow.secret_data.encrypted_data
     )
     db.add(new_secret)
-    db.commit()
+    db.flush()
+
+    # 1.1 Create AccessGrant for Owner (Creator) - Envelope Logic
+    # Schema validation ensures encrypted_key is present in secret_data
+    owner_grant = models.AccessGrant(
+        secret_id=new_secret.id,
+        grantee_address=current_user.address,
+        encrypted_key=workflow.secret_data.encrypted_key
+    )
+    db.add(owner_grant)
+    
+    db.commit() # Commit secret and grant
     db.refresh(new_secret)
 
     # 2. Create Workflow
@@ -92,12 +104,31 @@ def list_multisig_workflows(current_user: models.User = Depends(get_current_user
     ).all()
     
     # Deduplicate (if I am owner AND signer?)
-    all_wf = {w.id: w for w in owned + as_signer + as_recipient}
-    return list(all_wf.values())
+    all_wf_orm = {w.id: w for w in owned + as_signer + as_recipient}
+    
+    response_list = []
+    for wf in all_wf_orm.values():
+        val = schemas.MultisigWorkflowResponse.from_orm(wf)
+        
+        # If I am owner, fetch and attach key
+        if wf.owner_address == current_user.address and wf.secret:
+             # Optimization: Could load all grants in one go, but keeping it simple for fix
+             grant = db.query(models.AccessGrant).filter(
+                models.AccessGrant.secret_id == wf.secret.id,
+                models.AccessGrant.grantee_address == current_user.address
+            ).first()
+             if grant:
+                 val.owner_encrypted_key = grant.encrypted_key
+                 val.secret.encrypted_key = grant.encrypted_key
+        
+        response_list.append(val)
+        
+    return response_list
 
 @router.get("/workflow/{workflow_id}", response_model=schemas.MultisigWorkflowResponse)
 def get_multisig_workflow(workflow_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    wf = db.query(models.MultisigWorkflow).filter(models.MultisigWorkflow.id == workflow_id).first()
+    # Eager load secret to ensure it's available for schema
+    wf = db.query(models.MultisigWorkflow).options(joinedload(models.MultisigWorkflow.secret)).filter(models.MultisigWorkflow.id == workflow_id).first()
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
         
@@ -118,8 +149,25 @@ def get_multisig_workflow(workflow_id: int, current_user: models.User = Depends(
 
     if not has_access:
          raise HTTPException(status_code=403, detail="Not authorized")
-         
-    return wf
+
+    # Convert to Pydantic Response Model
+    wf_response = schemas.MultisigWorkflowResponse.from_orm(wf)
+
+    # Populate encrypted_key for the secret response if available
+    if wf.secret:
+        # Checking Grant for Secret
+        grant = db.query(models.AccessGrant).filter(
+            models.AccessGrant.secret_id == wf.secret.id,
+            models.AccessGrant.grantee_address == current_user.address
+        ).first()
+        
+        if grant:
+            # Update the Pydantic model response field
+            wf_response.owner_encrypted_key = grant.encrypted_key
+            # Also try nested for consistency if possible, but rely on top-level
+            wf_response.secret.encrypted_key = grant.encrypted_key
+            
+    return wf_response
 
 @router.post("/workflow/{workflow_id}/sign", response_model=schemas.MultisigWorkflowResponse)
 def sign_multisig_workflow(workflow_id: int, sig_req: schemas.MultisigSignatureRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):

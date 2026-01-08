@@ -45,7 +45,7 @@ const ShareModal = ({ isOpen, onClose, secret, onShare }) => {
         if (!selectedUser || !secret) return;
         setSharing(true);
         try {
-            const success = await onShare(secret.id, secret.encrypted_data, selectedUser.address, selectedUser.encryption_public_key, expiry);
+            const success = await onShare(secret.id, secret.encrypted_key, selectedUser.address, selectedUser.encryption_public_key, expiry);
             if (success) {
                 alert(`Shared with ${selectedUser.username}!`);
                 onClose();

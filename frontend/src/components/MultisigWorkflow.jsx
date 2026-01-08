@@ -84,14 +84,16 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate, setUploa
     const [creatorSignedContent, setCreatorSignedContent] = useState(null);
     const [error, setError] = useState('');
 
-    const isOwner = workflow.owner_address === user.address;
-    const mySignerEntry = workflow.signers.find(s => s.user_address === user.address);
+    const isOwner = workflow.owner_address.toLowerCase() === user.address.toLowerCase();
+    const mySignerEntry = workflow.signers.find(s => s.user_address.toLowerCase() === user.address.toLowerCase());
     const isSigner = !!mySignerEntry;
     const hasSigned = mySignerEntry?.has_signed;
 
     // Check if user is a recipient
-    const isRecipient = workflow.recipients.find(r => r.user_address === user.address);
+    const isRecipient = workflow.recipients.find(r => r.user_address.toLowerCase() === user.address.toLowerCase());
     const canView = isOwner || isSigner || (isRecipient && workflow.status === 'completed');
+
+    // console.log("MultisigWorkflow Debug:", { ... });
 
     const completedSignatures = workflow.signers.filter(s => s.has_signed).length;
     const totalSignatures = workflow.signers.length;
@@ -124,52 +126,95 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate, setUploa
             // 2. Check if I am a Signer with direct key access
             if (!encryptedKeyToDecrypt && isSigner) {
                 const mySignerEntry = workflow.signers.find(s => s.user_address === user.address);
-                if (mySignerEntry && mySignerEntry.encrypted_key) {
-                    console.log("Found signer key in workflow object");
-                    encryptedKeyToDecrypt = mySignerEntry.encrypted_key;
-                }
+                console.log("Found signer key in workflow object");
             }
 
-            // 3. Fallback: Check SHARED/Access Grants (For Legacy Signers/Recipients)
-            if (!encryptedKeyToDecrypt) {
-                try {
-                    const res = await fetch(API_ENDPOINTS.SECRETS.SHARED_WITH, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (res.ok) {
-                        const shared = await res.json();
-                        const myShare = shared.find(s => s.secret_id == workflow.secret_id);
-                        if (myShare) {
-                            encryptedKeyToDecrypt = myShare.encrypted_key;
-                        }
-                    }
-                } catch (err) {
-                    console.warn("Failed to fetch shared secrets", err);
-                }
+            // 3. Fallback: Check if Secret Data is embedded in Workflow (New Backend Schema)
+            if (!encryptedKeyToDecrypt && workflow.secret && workflow.secret.encrypted_data) {
+                // If I am a signer, I have the key (step 2), but I need the CONTENT.
+                // Wait, 'encryptedKeyToDecrypt' variable name in this function is confusing.
+                // It seems to be used as 'dataBlobToDecrypt'.
+                // LET'S RENAME/CLARIFY LOGIC:
+                // We need TWO things:
+                // A. The KEY (AES Key) -> derived from my Signer Entry (encrypted_key)
+                // B. The CONTENT (AES Encrypted Blob) -> derived from workflow.secret.encrypted_data
+
+                // The current function seems to expect ONE blob?
+                // `decryptContentValues` splits it? No.
+                // old `decryptContentValues` did `decryptData(encryptedDataString)`.
+
+                // NEW ENVELOPE LOGIC:
+                // 1. Decrypt KEY (from my signer entry)
+                // 2. Decrypt CONTENT (from workflow.secret) using KEY.
+
+                // logic below is legacy "Decrypt ONE thing". We must refactor `fetchAndDecrypt` significantly.
             }
 
-            // 3. If I am Owner, I fetch the secret directly
-            if (!encryptedKeyToDecrypt && isOwner) {
-                const secretsRes = await fetch(API_ENDPOINTS.SECRETS.LIST, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const secrets = await secretsRes.json();
-                const mySecret = secrets.find(s => s.id === workflow.secret_id);
-                if (mySecret) {
-                    encryptedKeyToDecrypt = mySecret.encrypted_data;
+            // NEW ENVELOPE LOGIC
+            // 1. Get MY Encrypted Key
+            let myEncryptedKey = null;
+            if (isOwner) {
+                // Check top-level owner key first (robust fix)
+                if (workflow.owner_encrypted_key) {
+                    myEncryptedKey = workflow.owner_encrypted_key;
                 }
+                // Fallback to nested if top-level missing (legacy support)
+                else if (workflow.secret && workflow.secret.encrypted_key) {
+                    myEncryptedKey = workflow.secret.encrypted_key;
+                }
+            } else if (isSigner) {
+                const s = workflow.signers.find(s => s.user_address === user.address);
+                if (s) myEncryptedKey = s.encrypted_key;
+            } else if (isRecipient && workflow.status === 'completed') {
+                const r = workflow.recipients.find(r => r.user_address === user.address);
+                if (r) myEncryptedKey = r.encrypted_key;
             }
 
-            if (!encryptedKeyToDecrypt) {
-                throw new Error("You don't have access to the secret content yet.");
-            }
+            if (!myEncryptedKey) throw new Error("Acccess Denied: No key found for your user.");
+
+            // 2. Get Encrypted Content
+            const encryptedContentBlob = workflow.secret?.encrypted_data;
+            if (!encryptedContentBlob) throw new Error("Secret content not found in workflow.");
 
             if (setUploadProgress) {
                 setUploadProgress(40);
-                setStatusMessage && setStatusMessage("Decrypting...");
+                setStatusMessage && setStatusMessage("Decrypting Key...");
             }
-            // Decrypt
-            await decryptContentValues(encryptedKeyToDecrypt, authType === 'trustkeys');
+
+            // 3. Decrypt Key
+            // We need secureDecrypt from useSecrets or import utils.
+            // Since we are in a component, we can import `secureDecrypt` logic or helpers.
+            // Let's use the raw utils for simplicity:
+            const { decryptData, decryptSymmetric } = await import('../utils/crypto');
+
+            let fileKey;
+            // PQC or Eth?
+            try {
+                // Try parsing JSON (PQC envelope)
+                const parsedKey = JSON.parse(myEncryptedKey);
+                if (authType === 'trustkeys') {
+                    fileKey = await decryptPQC(parsedKey);
+                } else {
+                    // Maybe it was just stringified PQC struct but we are metamask? (Shouldn't happen if created correctly)
+                    // Fallback to eth decrypt if simple string
+                    fileKey = await decryptData(myEncryptedKey, currentAccount);
+                }
+            } catch (e) {
+                // Not JSON, assume Eth String
+                fileKey = await decryptData(myEncryptedKey, currentAccount);
+            }
+
+            if (setUploadProgress) {
+                setUploadProgress(60);
+                setStatusMessage && setStatusMessage("Decrypting Content...");
+            }
+
+            // 4. Decrypt Content
+            const encDataObj = JSON.parse(encryptedContentBlob);
+            const contentString = await decryptSymmetric(encDataObj, fileKey);
+
+            // 5. Process Content (Parse JSON / Verify Signature)
+            await processDecryptedContent(contentString);
 
             if (setUploadProgress) {
                 setUploadProgress(100);
@@ -190,76 +235,43 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate, setUploa
         }
     };
 
-    const decryptContentValues = async (encryptedDataString, isPQC) => {
+    const processDecryptedContent = async (contentString) => {
         try {
-            let contentString;
-            if (isPQC) {
-                const decryptedJson = await decryptPQC(JSON.parse(encryptedDataString));
-                contentString = decryptedJson;
-                console.log("decryptContentValues: PQC Decrypted Length", contentString.length);
-            } else {
-                contentString = await decryptData(encryptedDataString, currentAccount);
-            }
+            let parsed;
+            try { parsed = JSON.parse(contentString); } catch (e) { }
 
-            // Check structure
-            try {
-                let parsed;
-                // Try to parse the decrypted string
-                try {
-                    parsed = JSON.parse(contentString);
-                } catch (e) {
-                    // Not JSON, just string
-                    console.warn("Decrypt: Not JSON", e);
-                }
-
-                if (parsed && parsed.signature && parsed.signerPublicKey) {
-                    // It is a Signed Document (Creator's)
-                    // It is a Signed Document (Creator's)
-                    let isValid = false;
-                    if (parsed.signerPublicKey && parsed.signerPublicKey.length > 200) {
-                        isValid = await verifySignaturePQC(parsed.content, parsed.signature, parsed.signerPublicKey);
-                    } else if (parsed.signerPublicKey) {
-                        // Ethereum Verification
-                        const recovered = verifyMessageEth(parsed.content, parsed.signature);
-                        isValid = recovered && recovered.toLowerCase() === parsed.signerPublicKey.toLowerCase();
-                    }
-                    setVerificationStatus(isValid ? 'verified' : 'failed');
-
-                    // Capture Creator Signature info for the list
-                    setCreatorSignature(parsed.signature);
-                    setCreatorSignedContent(parsed.content);
-
-                    // If inner content is file object, try to parse it
-                    try {
-                        const inner = JSON.parse(parsed.content);
-                        setDecryptedContent(inner);
-                    } catch {
-                        setDecryptedContent(parsed.content);
-                    }
-
-                    // Signers sign the PACKAGED content (contentString)
-                    setRawDecryptedContent(contentString);
+            if (parsed && parsed.signature && parsed.signerPublicKey) {
+                // Signed Document Wrapper
+                let isValid = false;
+                if (parsed.signerPublicKey.length > 200) {
+                    // we need verifySignaturePQC
+                    const { verifySignaturePQC } = await import('../utils/crypto');
+                    isValid = await verifySignaturePQC(parsed.content, parsed.signature, parsed.signerPublicKey);
                 } else {
-                    // Standard Content (Unsigned by creator wrapper)
-                    setVerificationStatus('unsigned');
-                    setCreatorSignature(null);
-                    setCreatorSignedContent(null);
-                    setDecryptedContent(parsed || contentString);
-                    setRawDecryptedContent(contentString);
+                    const { verifyMessageEth } = await import('../utils/crypto');
+                    const recovered = verifyMessageEth(parsed.content, parsed.signature);
+                    isValid = recovered && recovered.toLowerCase() === parsed.signerPublicKey.toLowerCase();
                 }
-            } catch (e) {
-                console.error("Content processing failed", e);
-                setDecryptedContent(contentString);
+                setVerificationStatus(isValid ? 'verified' : 'failed');
+                setCreatorSignature(parsed.signature);
+                setCreatorSignedContent(parsed.content);
                 setRawDecryptedContent(contentString);
-                setVerificationStatus('unsigned');
-                setCreatorSignature(null);
-            }
 
+                try {
+                    const inner = JSON.parse(parsed.content);
+                    setDecryptedContent(inner);
+                } catch {
+                    setDecryptedContent(parsed.content);
+                }
+            } else {
+                setVerificationStatus('unsigned');
+                setDecryptedContent(parsed || contentString);
+                setRawDecryptedContent(contentString);
+            }
             setIsViewing(false);
         } catch (e) {
-            console.error("Decrypt failed", e);
-            setError("Failed to decrypt: " + e.message);
-            setIsViewing(false);
+            console.error("Processing failed", e);
+            setError("Content malformed");
         }
     };
 
@@ -321,45 +333,51 @@ export default function MultisigWorkflow({ workflow, onClose, onUpdate, setUploa
 
             if (setUploadProgress) {
                 setUploadProgress(30);
-                setStatusMessage && setStatusMessage("Decrypting for signing...");
+                setStatusMessage && setStatusMessage("Decrypting content for signing...");
             }
 
-            let contentToSign;
+            // 1. Decrypt the AES Key (fileKey)
+            let fileKey;
+            try {
+                if (authType === 'trustkeys') {
+                    const decryptedKeyJson = await decryptPQC(JSON.parse(encryptedKey));
+                    // Check if it's a JSON string or raw
+                    try {
+                        // Sometimes double encoded?
+                        const obj = JSON.parse(decryptedKeyJson);
+                        // If it's the raw key hex string
+                        fileKey = typeof obj === 'string' ? obj : decryptedKeyJson;
+                    } catch {
+                        fileKey = decryptedKeyJson;
+                    }
+                } else {
+                    fileKey = await decryptData(encryptedKey, currentAccount);
+                }
+            } catch (e) {
+                console.error("Failed to decrypt AES key", e);
+                throw new Error("Failed to decrypt your access key");
+            }
+
+            // 2. Fetch and Decrypt the Content
+            const encryptedContentBlob = workflow.secret?.encrypted_data;
+            if (!encryptedContentBlob) throw new Error("Secret content not found to sign.");
+
+            const { decryptSymmetric, signMessageEth } = await import('../utils/crypto');
+
+            const encDataObj = JSON.parse(encryptedContentBlob);
+            const contentToSign = await decryptSymmetric(encDataObj, fileKey);
+
+            console.log("handleSign: Content to Sign Length", contentToSign.length);
+
+            if (setUploadProgress) {
+                setUploadProgress(50);
+                setStatusMessage && setStatusMessage(authType === 'trustkeys' ? "Signing..." : "Signing with Wallet...");
+            }
+
             let signature;
             if (authType === 'trustkeys') {
-                const decryptedJson = await decryptPQC(JSON.parse(encryptedKey));
-                // Canonicalize: Parse and Re-Stringify to remove artifacts/formatting diffs
-                try {
-                    const obj = JSON.parse(decryptedJson);
-                    contentToSign = JSON.stringify(obj);
-                } catch (e) {
-                    contentToSign = decryptedJson;
-                }
-                console.log("handleSign: Decrypted Content Length (Original)", decryptedJson.length);
-                console.log("handleSign: Content to Sign Length (Canonical)", contentToSign.length);
-
-                if (setUploadProgress) {
-                    setUploadProgress(50);
-                    setStatusMessage && setStatusMessage("Signing...");
-                }
                 signature = await signPQC(contentToSign);
             } else {
-                contentToSign = await decryptData(encryptedKey, currentAccount);
-                // MetaMask Signing
-                // Import signMessage at top or use from crypto? 
-                // We didn't import signMessage (or signMessageMetaMask) in this file yet.
-                // We need to import it.
-                // But wait, useWeb3 context might have it? No, context has verify/login logic.
-                // Crypto.js has signMessage.
-                // I need to update imports first if missing.
-                // Assuming I will add the import or have it.
-                // Let's use window.ethereum directly? No, use helper.
-                const { signMessageEth } = await import('../utils/crypto');
-
-                if (setUploadProgress) {
-                    setUploadProgress(50);
-                    setStatusMessage && setStatusMessage("Signing with Wallet...");
-                }
                 signature = await signMessageEth(contentToSign);
             }
 

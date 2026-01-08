@@ -25,6 +25,7 @@ class SecretBase(BaseModel):
     # 50MB limit for encrypted files (50 * 1024 * 1024 approx 52 million chars)
     # Base64 overhead typically 33%, so a 35MB file becomes ~48MB text.
     encrypted_data: str = Field(..., max_length=52_500_000)
+    encrypted_key: str = Field(..., max_length=52_500_000) # Key encrypted for Owner (or Viewer in Response)
 
 class SecretCreate(SecretBase):
     pass
@@ -33,6 +34,7 @@ class SecretResponse(SecretBase):
     id: int
     owner_address: str
     created_at: datetime
+    encrypted_key: Optional[str] # The specific key for the requesting user (joined from AccessGrant)
     owner: UserResponse
 
     class Config:
@@ -127,6 +129,8 @@ class MultisigWorkflowResponse(MultisigWorkflowBase):
     status: str
     created_at: datetime
     owner: UserResponse
+    secret: SecretResponse # Include Secret Data so signers can access encrypted_data
+    owner_encrypted_key: Optional[str] = None # Explicitly pass owner key here to avoid nesting issues
     signers: List[MultisigWorkflowSignerResponse]
     recipients: List[MultisigWorkflowRecipientResponse]
 
