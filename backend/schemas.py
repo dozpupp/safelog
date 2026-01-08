@@ -41,7 +41,7 @@ class SecretResponse(SecretBase):
 class AccessGrantCreate(BaseModel):
     secret_id: int
     grantee_address: str = Field(..., max_length=20000)
-    encrypted_key: str = Field(..., max_length=64000) # Kyber Hex is ~3.2KB. 64KB is safe.
+    encrypted_key: str = Field(..., max_length=52_500_000) # Full content is temporarily stored here in current architecture
     expires_in: Optional[int] = None # Seconds
 
 class AccessGrantResponse(BaseModel):
