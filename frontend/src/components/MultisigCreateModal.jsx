@@ -231,6 +231,30 @@ export default function MultisigCreateModal({ isOpen, onClose, onCreated }) {
         }
     };
 
+    const handleNext = () => {
+        if (step === 0) {
+            if (!name.trim()) {
+                alert("Please enter a workflow name.");
+                return;
+            }
+            if (contentType === 'text' && !content.trim()) {
+                alert("Please enter secret content.");
+                return;
+            }
+            if (contentType === 'file' && !selectedFile) {
+                alert("Please upload a file.");
+                return;
+            }
+        }
+        if (step === 1) {
+            if (signers.length === 0) {
+                alert("You must add at least one signer.");
+                return;
+            }
+        }
+        setStep(step + 1);
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -396,7 +420,7 @@ export default function MultisigCreateModal({ isOpen, onClose, onCreated }) {
                     </button>
                     {step < 3 ? (
                         <button
-                            onClick={() => setStep(step + 1)}
+                            onClick={handleNext}
                             className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg flex items-center gap-2"
                         >
                             Next <ArrowRight className="w-4 h-4" />
