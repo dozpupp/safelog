@@ -18,6 +18,7 @@ class UserResponse(UserBase):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class SecretBase(BaseModel):
     name: str = Field(..., max_length=200)
@@ -39,6 +40,7 @@ class SecretResponse(SecretBase):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class AccessGrantCreate(BaseModel):
     secret_id: int
@@ -58,6 +60,7 @@ class AccessGrantResponse(BaseModel):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class DocumentBase(BaseModel):
     name: str = Field(..., max_length=200)
@@ -74,6 +77,7 @@ class DocumentResponse(DocumentBase):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class LoginRequest(BaseModel):
     address: str = Field(..., max_length=20000)
@@ -113,6 +117,7 @@ class MultisigWorkflowSignerResponse(BaseModel):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class MultisigWorkflowRecipientResponse(BaseModel):
     user_address: str
@@ -121,6 +126,7 @@ class MultisigWorkflowRecipientResponse(BaseModel):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class MultisigWorkflowResponse(MultisigWorkflowBase):
     id: int
@@ -161,6 +167,7 @@ class MessageResponse(MessageBase):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class ConversationResponse(BaseModel):
     user: UserResponse
@@ -169,6 +176,7 @@ class ConversationResponse(BaseModel):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class HistoryRequest(BaseModel):
     partner_address: str
