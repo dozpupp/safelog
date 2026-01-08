@@ -34,7 +34,7 @@ class SecretResponse(SecretBase):
     id: int
     owner_address: str
     created_at: datetime
-    encrypted_key: Optional[str] # The specific key for the requesting user (joined from AccessGrant)
+    encrypted_key: Optional[str] = None # The specific key for the requesting user (joined from AccessGrant)
     owner: UserResponse
 
     class Config:
