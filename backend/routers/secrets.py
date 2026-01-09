@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from datetime import datetime, timezone, timedelta
 import models, schemas
 from database import get_db
 from dependencies import get_current_user
+from websocket_manager import manager
 
 router = APIRouter(tags=["secrets"]) # Secrets and Documents mixed? Or should I separate? Plan said secrets.py
 
@@ -84,7 +85,7 @@ def delete_secret(secret_id: int, current_user: models.User = Depends(get_curren
     return {"status": "ok"}
 
 @router.post("/secrets/share", response_model=schemas.AccessGrantResponse)
-def share_secret(grant: schemas.AccessGrantCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def share_secret(grant: schemas.AccessGrantCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     secret = db.query(models.Secret).filter(models.Secret.id == grant.secret_id).first()
     if not secret:
         raise HTTPException(status_code=404, detail="Secret not found")
@@ -121,6 +122,17 @@ def share_secret(grant: schemas.AccessGrantCreate, current_user: models.User = D
     db.add(new_grant)
     db.commit()
     db.refresh(new_grant)
+
+    # Real-time Update
+    await manager.send_personal_message({
+        "type": "SECRET_SHARED",
+        "data": {
+            "secret_id": new_grant.secret_id,
+            "sender": current_user.address,
+            "grant_id": new_grant.id
+        }
+    }, grant.grantee_address.lower())
+
     return new_grant
 
 @router.delete("/secrets/share/{grant_id}")
@@ -182,7 +194,10 @@ def get_shared_secrets(current_user: models.User = Depends(get_current_user), db
     now = datetime.now(timezone.utc)
     
     # query grants where grantee is me BUT secret owner is NOT me
-    grants = db.query(models.AccessGrant).join(models.Secret).filter(
+    grants = db.query(models.AccessGrant).options(
+        joinedload(models.AccessGrant.secret).joinedload(models.Secret.owner),
+        joinedload(models.AccessGrant.grantee)
+    ).join(models.Secret).filter(
         models.AccessGrant.grantee_address == current_user.address,
         models.Secret.owner_address != current_user.address
     ).all()

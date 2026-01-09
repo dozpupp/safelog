@@ -52,7 +52,9 @@ export default function Dashboard() {
         createSecret,
         updateSecret,
         deleteSecret,
-        shareSecret
+        shareSecret,
+        revokeGrant,
+        fetchSharedSecrets
     } = useSecrets(authType, encryptionPublicKey, currentDisplayAccount, { onProgress: updateProgress });
 
     const {
@@ -109,7 +111,19 @@ export default function Dashboard() {
     // Optimization: Lift useMessenger to here? Or create light version?
     // Current app structure: Messenger component calls useMessenger. 
     // To get unread count at Dashboard level, we must call useMessenger here.
-    const { unreadCount } = useMessenger();
+    // To get unread count at Dashboard level, we must call useMessenger here.
+    const { unreadCount, lastEvent } = useMessenger();
+
+    // Listen for Real-time Events
+    React.useEffect(() => {
+        if (lastEvent && lastEvent.type === 'SECRET_SHARED') {
+            console.log("Real-time Update: Fetching Shared Secrets");
+            fetchSharedSecrets();
+            // Optional: Show toast
+            updateProgress(100, "New secret shared with you!");
+            setTimeout(() => updateProgress(0, ""), 3000);
+        }
+    }, [lastEvent]);
 
     const handleMultisigCreateSuccess = () => {
         setIsMultisigCreateOpen(false);
@@ -194,6 +208,16 @@ export default function Dashboard() {
                                         {actionRequiredCount}
                                     </span>
                                 )}
+                                {item.id === 'secrets' && (
+                                    (() => {
+                                        const unreadSecrets = sharedSecrets.filter(s => !decryptedSecrets[`shared_${s.id}`]).length;
+                                        return unreadSecrets > 0 ? (
+                                            <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                                {unreadSecrets}
+                                            </span>
+                                        ) : null;
+                                    })()
+                                )}
                             </button>
                         ))}
                         {/* Messenger Tab */}
@@ -260,6 +284,7 @@ export default function Dashboard() {
                                 onViewDetails={handleViewDetails}
                                 loading={secretsLoading}
                                 authType={authType}
+                                onRevoke={revokeGrant}
                             />
                         </>
                     )}
@@ -291,27 +316,31 @@ export default function Dashboard() {
                         </div>
                     )}
                 </div>
-            </main>
+            </main >
 
             {/* Modals */}
-            {selectedWorkflow && (
-                <MultisigWorkflow
-                    workflow={selectedWorkflow}
-                    onClose={() => setSelectedWorkflow(null)}
-                    onUpdate={handleMultisigUpdate}
-                    setUploadProgress={updateProgress}
-                    setStatusMessage={(msg) => updateProgress(undefined, msg)}
-                />
-            )}
+            {
+                selectedWorkflow && (
+                    <MultisigWorkflow
+                        workflow={selectedWorkflow}
+                        onClose={() => setSelectedWorkflow(null)}
+                        onUpdate={handleMultisigUpdate}
+                        setUploadProgress={updateProgress}
+                        setStatusMessage={(msg) => updateProgress(undefined, msg)}
+                    />
+                )
+            }
 
-            {isMultisigCreateOpen && (
-                <MultisigCreateModal
-                    isOpen={isMultisigCreateOpen}
-                    onClose={() => setIsMultisigCreateOpen(false)}
-                    onCreated={handleMultisigCreateSuccess}
-                    secrets={secrets}
-                />
-            )}
+            {
+                isMultisigCreateOpen && (
+                    <MultisigCreateModal
+                        isOpen={isMultisigCreateOpen}
+                        onClose={() => setIsMultisigCreateOpen(false)}
+                        onCreated={handleMultisigCreateSuccess}
+                        secrets={secrets}
+                    />
+                )
+            }
 
             <ShareModal
                 isOpen={isShareModalOpen}
@@ -331,9 +360,11 @@ export default function Dashboard() {
                 onClose={() => setIsProfileOpen(false)}
             />
 
-            {showVaultManager && (
-                <VaultManager onClose={() => setShowVaultManager(false)} />
-            )}
-        </div>
+            {
+                showVaultManager && (
+                    <VaultManager onClose={() => setShowVaultManager(false)} />
+                )
+            }
+        </div >
     );
 }

@@ -2,7 +2,7 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import SecretItem from './SecretItem';
 
-const SecretList = ({ secrets, sharedSecrets = [], decryptedSecrets, onDecrypt, onEdit, onDelete, onShare, onViewDetails, loading, authType }) => {
+const SecretList = ({ secrets, sharedSecrets = [], decryptedSecrets, onDecrypt, onEdit, onDelete, onShare, onRevoke, onViewDetails, loading, authType }) => {
     if (loading) {
         return (
             <div className="flex justify-center p-12">
@@ -61,7 +61,7 @@ const SecretList = ({ secrets, sharedSecrets = [], decryptedSecrets, onDecrypt, 
                                 decryptedContent={decryptedSecrets[`shared_${grant.id}`]}
                                 onDecrypt={() => onDecrypt(grant, true)} // Pass boolean true for isShared
                                 onEdit={(s) => { alert("Cannot edit shared secrets."); }}
-                                onDelete={() => { /* Revoke logic? */ }}
+                                onDelete={() => onRevoke(grant.id, true)}
                                 onShare={() => { /* Re-share logic? */ }}
                                 authType={authType}
                                 isSharedView={true}

@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import { MessengerProvider } from './context/MessengerContext';
 
 import AuthBridge from './components/AuthBridge';
 
@@ -32,7 +33,9 @@ function App() {
       <AuthProvider>
         <Web3Provider>
           <PQCProvider>
-            <AppContent />
+            <MessengerProvider>
+              <AppContent />
+            </MessengerProvider>
           </PQCProvider>
         </Web3Provider>
       </AuthProvider>

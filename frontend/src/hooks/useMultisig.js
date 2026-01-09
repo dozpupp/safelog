@@ -32,7 +32,10 @@ export function useMultisig() {
                     const count = data.filter(wf => {
                         const myAddr = user.address.toLowerCase();
                         // 1. I am a signer and haven't signed
-                        const isSigner = wf.signers.some(s => s.address && s.address.toLowerCase() === myAddr && !s.has_signed);
+                        const isSigner = wf.signers.some(s => {
+                            const sAddr = s.user_address || (s.user && s.user.address);
+                            return sAddr && sAddr.toLowerCase() === myAddr && !s.has_signed;
+                        });
                         // 2. Workflow is complete and I am a recipient (maybe notification needed? let's stick to signer actions for now for red dot)
                         // Actually, if I created it and it's done?
                         // Let's stick to "Blocking Actions": Need to sign.

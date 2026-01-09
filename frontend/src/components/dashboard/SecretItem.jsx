@@ -130,9 +130,11 @@ const SecretItem = ({ secret, decryptedContent, onDecrypt, onEdit, onDelete, onS
                     </div>
                 </div>
                 <div className="flex gap-1">
-                    <button onClick={() => onShare(secret)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-indigo-500 transition-colors" title="Share">
-                        <Share2 className="w-4 h-4" />
-                    </button>
+                    {!secret.isShared && (
+                        <button onClick={() => onShare(secret)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-indigo-500 transition-colors" title="Share">
+                            <Share2 className="w-4 h-4" />
+                        </button>
+                    )}
                     {!decryptedContent && (
                         <button onClick={() => onEdit(secret)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-indigo-500 transition-colors" title="Edit (Must Decrypt first)">
                             <Edit2 className="w-4 h-4" />
