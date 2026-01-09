@@ -4,8 +4,8 @@ const { Buffer } = require('buffer');
 const crypto = require('crypto');
 require('dotenv').config();
 
-const HOST = '127.0.0.1';
-const PORT = 3002;
+const HOST = process.env.HOST || '127.0.0.1';
+const PORT = process.env.PORT || 3002;
 
 // Initialize Crypto and Keys
 let dilithium = null;

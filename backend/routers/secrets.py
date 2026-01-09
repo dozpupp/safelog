@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from dependencies import limiter
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from datetime import datetime, timezone, timedelta
@@ -11,7 +12,8 @@ router = APIRouter(tags=["secrets"]) # Secrets and Documents mixed? Or should I 
 
 # Secrets
 @router.post("/secrets", response_model=schemas.SecretResponse)
-def create_secret(secret: schemas.SecretCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("20/minute")
+def create_secret(request: Request, secret: schemas.SecretCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     # 1. Create Secret (Content)
     new_secret = models.Secret(
         owner_address=current_user.address,
@@ -85,7 +87,8 @@ def delete_secret(secret_id: int, current_user: models.User = Depends(get_curren
     return {"status": "ok"}
 
 @router.post("/secrets/share", response_model=schemas.AccessGrantResponse)
-async def share_secret(grant: schemas.AccessGrantCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+async def share_secret(request: Request, grant: schemas.AccessGrantCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     secret = db.query(models.Secret).filter(models.Secret.id == grant.secret_id).first()
     if not secret:
         raise HTTPException(status_code=404, detail="Secret not found")

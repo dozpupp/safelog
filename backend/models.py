@@ -110,11 +110,11 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    sender_address = Column(String, ForeignKey("users.address"))
-    recipient_address = Column(String, ForeignKey("users.address"))
+    sender_address = Column(String, ForeignKey("users.address"), index=True)
+    recipient_address = Column(String, ForeignKey("users.address"), index=True)
     content = Column(Text) # Encrypted Blob
-    is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    is_read = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     sender = relationship("User", foreign_keys=[sender_address], back_populates="sent_messages")
     recipient = relationship("User", foreign_keys=[recipient_address], back_populates="received_messages")
@@ -125,10 +125,10 @@ User.workflows = relationship("MultisigWorkflow", back_populates="owner")
 User.sent_messages = relationship("Message", foreign_keys=[Message.sender_address], back_populates="sender")
 User.received_messages = relationship("Message", foreign_keys=[Message.recipient_address], back_populates="recipient")
 
-__tablename__ = "recovery_shares"
+class RecoveryShare(Base):
+    __tablename__ = "recovery_shares"
 
-id = Column(Integer, primary_key=True, index=True)
-google_id = Column(String, index=True, unique=True) # The 'sub' from Google ID Token
-share_data = Column(Text) # Encrypted share blob (Share B)
-created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
+    id = Column(Integer, primary_key=True, index=True)
+    google_id = Column(String, index=True, unique=True) # The 'sub' from Google ID Token
+    share_data = Column(Text) # Encrypted share blob (Share B)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

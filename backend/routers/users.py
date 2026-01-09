@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from dependencies import limiter
 from sqlalchemy.orm import Session
 from typing import List
 import models, schemas
@@ -39,7 +40,10 @@ def get_user(address: str, db: Session = Depends(get_db)):
     return user
 
 @router.get("", response_model=List[schemas.UserResponse])
-def list_users(search: str = None, limit: int = 5, offset: int = 0, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def list_users(request: Request, search: str = None, limit: int = 5, offset: int = 0, db: Session = Depends(get_db)):
+    if limit > 100:
+        limit = 100
     query = db.query(models.User)
     
     if search:
@@ -55,7 +59,8 @@ class UserResolveRequest(schemas.BaseModel):
     address: str
 
 @router.post("/resolve", response_model=schemas.UserResponse)
-def resolve_user(req: UserResolveRequest, db: Session = Depends(get_db)):
+@limiter.limit("60/minute")
+def resolve_user(request: Request, req: UserResolveRequest, db: Session = Depends(get_db)):
     # Helper to resolve user by address (Eth or PQC)
     user = db.query(models.User).filter(models.User.address == req.address).first()
     if not user:

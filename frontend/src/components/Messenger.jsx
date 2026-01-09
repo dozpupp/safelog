@@ -23,6 +23,13 @@ export default function Messenger() {
 
     const [isNewChatOpen, setIsNewChatOpen] = useState(false);
 
+    // Cleanup when leaving messenger view
+    React.useEffect(() => {
+        return () => {
+            setActiveConversation(null);
+        };
+    }, [setActiveConversation]);
+
     const handleStartNewChat = (partnerUser) => {
         loadConversation(partnerUser);
         setIsNewChatOpen(false);

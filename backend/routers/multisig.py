@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from dependencies import limiter
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from datetime import datetime, timezone
@@ -12,7 +13,8 @@ router = APIRouter(
 )
 
 @router.post("/workflow", response_model=schemas.MultisigWorkflowResponse)
-def create_multisig_workflow(workflow: schemas.MultisigWorkflowCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def create_multisig_workflow(request: Request, workflow: schemas.MultisigWorkflowCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     # 1. Create the Secret (Owned by Creator)
     # 1. Create the Secret (Owned by Creator)
     new_secret = models.Secret(
@@ -170,7 +172,8 @@ def get_multisig_workflow(workflow_id: int, current_user: models.User = Depends(
     return wf_response
 
 @router.post("/workflow/{workflow_id}/sign", response_model=schemas.MultisigWorkflowResponse)
-def sign_multisig_workflow(workflow_id: int, sig_req: schemas.MultisigSignatureRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("20/minute")
+def sign_multisig_workflow(request: Request, workflow_id: int, sig_req: schemas.MultisigSignatureRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     wf = db.query(models.MultisigWorkflow).filter(models.MultisigWorkflow.id == workflow_id).first()
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")

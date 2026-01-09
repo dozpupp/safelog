@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status, Request
+from dependencies import limiter
 from sqlalchemy.orm import Session, defer
 from sqlalchemy import or_
 from typing import List
@@ -14,7 +15,10 @@ router = APIRouter(
 )
 
 @router.post("", response_model=schemas.MessageResponse)
-async def send_message(msg: schemas.MessageCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("20/minute")
+async def send_message(request: Request, msg: schemas.MessageCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if len(msg.content) > 10000: # 10KB limit
+        raise HTTPException(status_code=400, detail="Message too long")
     # Verify recipient exists
     recipient_addr = msg.recipient_address.lower()
     recipient = db.query(models.User).filter(models.User.address == recipient_addr).first()
@@ -53,42 +57,98 @@ async def send_message(msg: schemas.MessageCreate, current_user: models.User = D
     return new_msg
 
 @router.get("/conversations", response_model=List[schemas.ConversationResponse])
-def get_conversations(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Fetch all messages involving me
-    # OPTIMIZATION: value 'content' is deferred to prevent loading massive blobs into memory
-    # when we only need metadata to sort/group.
-    # Content will be lazy-loaded only for the single 'last_message' per conversation during serialization.
-    all_msgs = db.query(models.Message).options(defer(models.Message.content)).filter(
+@limiter.limit("30/minute")
+def get_conversations(request: Request, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Fetch list of unique conversations for the current user.
+    Optimized to minimize DB queries (N+1 fixed) and avoid fetching all message content.
+    """
+    # SQLite-compatible optimization to get the latest message for each partner.
+    # We find the max ID for each conversation pair.
+    
+    # 1. Subquery: Find the latest message ID for each conversation pair (user <-> partner)
+    # The pair is identified by ensuring smaller address is first, or simply by checking both directions.
+    # Grouping by the "other person" is safer.
+    
+    # Let's get distinct partners first?
+    # Or strict SQL approach:
+    # SELECT * FROM messages m 
+    # WHERE m.id IN (
+    #   SELECT MAX(id) FROM messages 
+    #   WHERE sender_address = :me OR recipient_address = :me 
+    #   GROUP BY CASE WHEN sender_address = :me THEN recipient_address ELSE sender_address END
+    # )
+    
+    # SQLAlchemy expression:
+    from sqlalchemy import func, case, and_
+    
+    partner_address_col = case(
+        (models.Message.sender_address == current_user.address, models.Message.recipient_address),
+        else_=models.Message.sender_address
+    )
+    
+    subquery = db.query(
+        func.max(models.Message.id).label("max_id")
+    ).filter(
         or_(
             models.Message.sender_address == current_user.address,
             models.Message.recipient_address == current_user.address
         )
+    ).group_by(partner_address_col).subquery()
+    
+    # 2. Main Query: Fetch messages that match these IDs
+    # Also eager load the sender/recipient to avoid N+1 when determining user info
+    from sqlalchemy.orm import joinedload
+    
+    latest_messages = db.query(models.Message).options(
+        joinedload(models.Message.sender),
+        joinedload(models.Message.recipient),
+        defer(models.Message.content) # Defer content unless needed
+    ).filter(
+        models.Message.id.in_(subquery)
     ).order_by(models.Message.created_at.desc()).all()
     
-    conversations = {}
-    for m in all_msgs:
-        partner_addr = m.recipient_address if m.sender_address == current_user.address else m.sender_address
-        if partner_addr not in conversations:
-            # Fetch partner user object
-            partner = db.query(models.User).filter(models.User.address == partner_addr).first()
-            if partner:
-                # Calculate unread count (messages FROM partner TO me which are NOT read)
-                unread = db.query(models.Message).filter(
-                    models.Message.sender_address == partner_addr,
-                    models.Message.recipient_address == current_user.address,
-                    models.Message.is_read == False
-                ).count()
-
-                conversations[partner_addr] = {
-                    "user": partner,
-                    "last_message": m,
-                    "unread_count": unread
-                }
+    conversations = []
     
-    return list(conversations.values())
+    # 3. Process results
+    # We need to compute unread count. Optimized approach: 
+    # A single query to get all unread counts grouped by sender?
+    #   SELECT sender_address, COUNT(*) FROM messages 
+    #   WHERE recipient_address = :me AND is_read = 0 
+    #   GROUP BY sender_address
+    
+    unread_counts_query = db.query(
+        models.Message.sender_address, func.count(models.Message.id)
+    ).filter(
+        models.Message.recipient_address == current_user.address,
+        models.Message.is_read == False
+    ).group_by(models.Message.sender_address).all()
+    
+    unread_map = {addr: count for addr, count in unread_counts_query}
+    
+    for m in latest_messages:
+        partner = m.recipient if m.sender_address == current_user.address else m.sender
+        
+        # Safety check if partner user exists (it should due to FK)
+        if not partner:
+            continue
+            
+        unread = unread_map.get(partner.address, 0)
+        
+        conversations.append({
+            "user": partner,
+            "last_message": m,
+            "unread_count": unread
+        })
+    
+    return conversations
 
 @router.post("/history", response_model=List[schemas.MessageResponse])
-def get_message_history(req: schemas.HistoryRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("60/minute")
+def get_message_history(request: Request, req: schemas.HistoryRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if req.limit > 100:
+        req.limit = 100
+    
     partner_address = req.partner_address.lower()
     
     msgs = db.query(models.Message).filter(

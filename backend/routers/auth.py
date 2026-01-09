@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from dependencies import limiter
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
 import models, schemas, auth
@@ -10,7 +11,8 @@ router = APIRouter(
 )
 
 @router.get("/nonce/{address}")
-def get_nonce(address: str, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def get_nonce(request: Request, address: str, db: Session = Depends(get_db)):
     # Cleanup expired nonces first (lazy cleanup)
     now = datetime.now(timezone.utc)
     db.query(models.Nonce).filter(models.Nonce.expires_at <= now).delete()
@@ -26,8 +28,9 @@ def get_nonce(address: str, db: Session = Depends(get_db)):
     return {"nonce": nonce_val}
 
 @router.post("/login", response_model=schemas.Token)
-def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
-    address = request.address.lower()
+@limiter.limit("5/minute")
+def login(request: Request, login_req: schemas.LoginRequest, db: Session = Depends(get_db)):
+    address = login_req.address.lower()
     
     # Fetch nonce from DB
     nonce_entry = db.query(models.Nonce).filter(models.Nonce.address == address).first()
@@ -41,10 +44,10 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=400, detail="Nonce expired.")
     
-    if request.nonce != nonce_entry.nonce:
+    if login_req.nonce != nonce_entry.nonce:
          raise HTTPException(status_code=400, detail="Invalid nonce.")
 
-    if not auth.verify_signature(address, request.nonce, request.signature):
+    if not auth.verify_signature(address, login_req.nonce, login_req.signature):
         raise HTTPException(status_code=401, detail="Invalid signature")
     
     # Cleanup nonce (Anti-replay)
@@ -55,18 +58,18 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.address == address).first()
     if not user:
         # Default username logic: Use provided username OR first 7 chars of address
-        default_username = request.username if request.username else address[:7]
+        default_username = login_req.username if login_req.username else address[:7]
         user = models.User(
             address=address, 
-            encryption_public_key=request.encryption_public_key,
+            encryption_public_key=login_req.encryption_public_key,
             username=default_username
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    elif request.encryption_public_key and user.encryption_public_key != request.encryption_public_key:
+    elif login_req.encryption_public_key and user.encryption_public_key != login_req.encryption_public_key:
         # Update key if it changed or wasn't set
-        user.encryption_public_key = request.encryption_public_key
+        user.encryption_public_key = login_req.encryption_public_key
         db.commit()
         db.refresh(user)
     else:

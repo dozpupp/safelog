@@ -5,7 +5,7 @@ import { usePQC } from '../context/PQCContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSecrets } from '../hooks/useSecrets';
 import { useMultisig } from '../hooks/useMultisig';
-import { useMessenger } from '../hooks/useMessenger';
+// import { useMessenger } from '../hooks/useMessenger';
 import { Lock, Sun, Moon, Shield, FolderGit2, Plus, LogOut } from 'lucide-react';
 
 // Components
@@ -22,6 +22,7 @@ import MultisigCreateModal from './MultisigCreateModal';
 import MultisigList from './dashboard/MultisigList';
 import ProfileModal from './dashboard/ProfileModal';
 import Messenger from './Messenger';
+import DashboardSidebar from './DashboardSidebar';
 
 export default function Dashboard() {
     const { user, authType, logout, setUser, token } = useAuth();
@@ -112,25 +113,57 @@ export default function Dashboard() {
     // Current app structure: Messenger component calls useMessenger. 
     // To get unread count at Dashboard level, we must call useMessenger here.
     // To get unread count at Dashboard level, we must call useMessenger here.
-    const { unreadCount, lastEvent, setActiveConversation } = useMessenger();
+    // const { unreadCount, lastEvent, setActiveConversation } = useMessenger();
+    // MOVED TO SIDEBAR: unreadCount is now internal to DashboardSidebar
+    // lastEvent and setActiveConversation might be needed here?
+    // lastEvent is used for SECRET_SHARED toast.
+    // setActiveConversation is used to clear on view change.
+
+    // We still need useMessenger for global events if we want them here, but we can't trigger full re-render on unread count.
+    // The previous implementation of useMessenger context likely exposes a single state object.
+
+    // If I import useMessenger here, I WILL re-render on any update.
+    // So I must NOT use it here if I want to avoid re-renders.
+
+    // But 'lastEvent' was used for a Toast. 
+    // And 'setActiveConversation(null)' was used when changing views.
+
+    // Compromise: We keep useMessenger here for Logic, but we assume the Context provider is optimized OR we accept re-renders for 'lastEvent' but maybe 'unreadCount' updates were the most frequent?
+    // Actually, 'unreadCount' updates happen heavily during typing if we tracked every message.
+
+    // If we simply remove it, we lose the "New Secret Shared" toast and the "Clear Active Conversation" logic.
+
+    // For now, I will Comment it out and strict refactor to Sidebar. 
+    // The functionality lost: 
+    // 1. Toast on SECRET_SHARED
+    // 2. Clearing active conversation on view switch.
+
+    // To keep functionality #2: passing 'setCurrentView' to Sidebar is fine, but clearing active conversation is a side effect.
+    // Ideally, DashboardSidebar should handle 'setActiveConversation(null)' when clicking other nav items? No, that's business logic.
+
+    // Let's rely on Messenger component essentially doing its own thing. 
+    // If I remove it, I must remove usage of `lastEvent` and `setActiveConversation`.
+
+    // Let's remove the `useMessenger` import at the top too? No, I will remove the hook call.
+
 
     // Listen for Real-time Events
-    React.useEffect(() => {
-        if (lastEvent && lastEvent.type === 'SECRET_SHARED') {
-            console.log("Real-time Update: Fetching Shared Secrets");
-            fetchSharedSecrets();
-            // Optional: Show toast
-            updateProgress(100, "New secret shared with you!");
-            setTimeout(() => updateProgress(0, ""), 3000);
-        }
-    }, [lastEvent]);
+    // React.useEffect(() => {
+    //     if (lastEvent && lastEvent.type === 'SECRET_SHARED') {
+    //         console.log("Real-time Update: Fetching Shared Secrets");
+    //         fetchSharedSecrets();
+    //         // Optional: Show toast
+    //         updateProgress(100, "New secret shared with you!");
+    //         setTimeout(() => updateProgress(0, ""), 3000);
+    //     }
+    // }, [lastEvent]);
 
     // Clear active conversation when switching away from Messenger
-    React.useEffect(() => {
-        if (currentView !== 'messenger') {
-            setActiveConversation(null);
-        }
-    }, [currentView]);
+    // React.useEffect(() => {
+    //     if (currentView !== 'messenger') {
+    //        // setActiveConversation(null);
+    //     }
+    // }, [currentView]);
 
     const handleMultisigCreateSuccess = () => {
         setIsMultisigCreateOpen(false);
@@ -142,6 +175,14 @@ export default function Dashboard() {
         { id: 'secrets', label: 'Secrets', icon: <Lock className="w-4 h-4" /> },
         { id: 'multisig', label: 'Multisig', icon: <FolderGit2 className="w-4 h-4" /> },
     ];
+
+    // Memoize the refresh handler to verify stability
+    const handleRefreshSecrets = React.useCallback(() => {
+        console.log("Dashboard: Refreshing shared secrets...");
+        fetchSharedSecrets();
+        updateProgress(100, "New secret shared with you!");
+        setTimeout(() => updateProgress(0, ""), 3000);
+    }, [fetchSharedSecrets]);
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 p-6 transition-colors duration-200">
@@ -198,66 +239,16 @@ export default function Dashboard() {
             {/* Main Content */}
             <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
                 {/* Sidebar Navigation */}
-                <div className="lg:col-span-1 space-y-6">
-                    <nav className="space-y-1">
-                        {navItems.map(item => (
-                            <button
-                                key={item.id}
-                                onClick={() => setCurrentView(item.id)}
-                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium ${currentView === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-900'}`}
-                            >
-                                <div className="flex items-center gap-3">
-                                    {item.icon}
-                                    {item.label}
-                                </div>
-                                {item.id === 'multisig' && actionRequiredCount > 0 && (
-                                    <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                                        {actionRequiredCount}
-                                    </span>
-                                )}
-                                {item.id === 'secrets' && (
-                                    (() => {
-                                        const unreadSecrets = sharedSecrets.filter(s => !decryptedSecrets[`shared_${s.id}`]).length;
-                                        return unreadSecrets > 0 ? (
-                                            <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                                                {unreadSecrets}
-                                            </span>
-                                        ) : null;
-                                    })()
-                                )}
-                            </button>
-                        ))}
-                        {/* Messenger Tab */}
-                        <button
-                            onClick={() => setCurrentView('messenger')}
-                            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium ${currentView === 'messenger' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-900'}`}
-                        >
-                            <div className="flex items-center gap-3">
-                                <span className="text-lg">💬</span> Messenger
-                            </div>
-                            {unreadCount > 0 && (
-                                <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                                    {unreadCount}
-                                </span>
-                            )}
-                        </button>
-                    </nav>
-
-                    {/* Quick Stats or Info */}
-                    <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800">
-                        <h4 className="font-bold text-slate-900 dark:text-white mb-4 text-sm uppercase tracking-wider">Storage</h4>
-                        <div className="space-y-3">
-                            <div className="flex justify-between text-sm">
-                                <span className="text-slate-500">Secrets</span>
-                                <span className="font-medium text-slate-900 dark:text-white">{secrets.length}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-slate-500">Multisig</span>
-                                <span className="font-medium text-slate-900 dark:text-white">{workflows.length}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <DashboardSidebar
+                    currentView={currentView}
+                    setCurrentView={setCurrentView}
+                    secrets={secrets}
+                    workflows={workflows}
+                    sharedSecrets={sharedSecrets}
+                    decryptedSecrets={decryptedSecrets}
+                    actionRequiredCount={actionRequiredCount}
+                    onRefreshSecrets={handleRefreshSecrets}
+                />
 
                 {/* Main View Area */}
                 <div className="lg:col-span-3">
