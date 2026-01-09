@@ -79,7 +79,7 @@ window.addEventListener('message', async (event) => {
                 break;
             case 'TRUSTKEYS_WRAP_SESSION_KEY':
                 const wrapRes = await callBackground('WRAP_SESSION_KEY', { sessionKey: payload.sessionKey, publicKey: payload.publicKey });
-                result = wrapRes.wrapped;
+                result = wrapRes.wrappedKey;
                 break;
             case 'TRUSTKEYS_UNWRAP_SESSION_KEY':
                 const unwrapRes = await callBackground('UNWRAP_SESSION_KEY', { wrappedKey: payload.wrappedKey });

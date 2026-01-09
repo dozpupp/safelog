@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, getSessionPassword } from './state.js';
 import * as auth from './handlers/auth.js';
 import * as conn from './handlers/connection.js';
 import * as acct from './handlers/accounts.js';
@@ -142,41 +142,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
                 case 'EXPORT_KEYS': {
                     if (sender.id !== chrome.runtime.id) throw new Error("Unauthorized: Internal use only");
-                    // Verify password logic was inline in original.
-                    // We need to verify password. auth.unlock verifies it against vault.
-                    // If we are unlocked, do we need password again? Original code did require it.
-                    // Let's implement inline or add to acct handler.
-                    // Re-using logic:
-                    // 1. Verify Password by attempting to decrypt stored vault
-                    const { vaultData } = await chrome.storage.local.get('vaultData');
-                    try {
-                        // We import decryptVault from utils/crypto for this check?
-                        // Or just use auth.unlock? auth.unlock updates state.
-                        // We just want to verify.
-                        // Let's assume request.password is provided.
-                        // Ideally we move this to acct.exportKeys(password).
-                        // I will invoke acct (but I didn't implement exportKeys there yet).
-                        // I'll implement it inline here for now or add it to acct if needed.
-                        // But I can't import decryptVault here easily without import?
-                        // I should've added it to handlers.
-                        // Let's skip detailed export implementation for now or just mock success if unlocked?
-                        // No, security.
-                        // I'll defer to Error: "Not implemented in refactor" or try to do it right.
-                        // I'll assume users know what they are doing.
-                        // I'll import decryptVault here (utils/crypto.js) just for this.
-                        // Wait, I can't import from outside src easily if not set up?
-                        // It is set up.
-                        // But I'd rather move logic to handlers/accounts.js if I could.
-                        sendResponse({ success: false, error: "Export temporarily disabled for refactor" });
-                    } catch (e) {
-                        sendResponse({ success: false, error: "Invalid Password" });
-                    }
+                    const vaultData = await acct.exportVault(request.password);
+                    sendResponse({ success: true, vaultData });
                     break;
                 }
                 case 'IMPORT_KEYS': {
-                    // Similar to Export, logic was inline.
-                    // I'll skip for this pass or move to accounts.
-                    sendResponse({ success: false, error: "Import temporarily disabled for refactor" });
+                    if (sender.id !== chrome.runtime.id) throw new Error("Unauthorized: Internal use only");
+
+                    // Debug Log
+                    console.log("TrustKeys: IMPORT_KEYS received", {
+                        hasAccounts: !!request.accounts,
+                        isAccountsArray: Array.isArray(request.accounts),
+                        hasData: !!request.data,
+                        hasPassword: !!request.password
+                    });
+
+                    // Frontend sends { accounts: [...] }
+                    // We wrap it to match importVault expectation
+                    const vaultObj = request.accounts ? { accounts: request.accounts } : request.data;
+                    const password = request.password || getSessionPassword(); // Frontend does not send password for import, assumes session
+
+                    if (!vaultObj) {
+                        return sendResponse({ success: false, error: "DEBUG: No vault data received (accounts and data missing)" });
+                    }
+
+                    if (!password) return sendResponse({ success: false, error: "Session locked" });
+
+                    try {
+                        await acct.importVault(vaultObj, password);
+                        sendResponse({ success: true, count: request.accounts ? request.accounts.length : 1 });
+                    } catch (e) {
+                        console.error("TrustKeys Import Error:", e);
+                        sendResponse({ success: false, error: e.message + " (Stack: " + e.stack + ")" });
+                    }
                     break;
                 }
 
