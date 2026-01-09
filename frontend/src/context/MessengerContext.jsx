@@ -178,6 +178,9 @@ export const MessengerProvider = ({ children }) => {
         setActiveConversation({ user: fullUser, messages: [] });
         setMessagesLoading(true);
 
+        // Mark as read immediately when loading
+        markRead(partnerUser.address);
+
         try {
             const res = await fetch(`${API_ENDPOINTS.BASE}/messages/history`, {
                 method: 'POST',
@@ -329,15 +332,17 @@ export const MessengerProvider = ({ children }) => {
     };
 
     const markRead = async (partnerAddr) => {
+        // Optimistic Update
+        setConversations(prev => prev.map(c =>
+            c.user.address.toLowerCase() === partnerAddr.toLowerCase() ? { ...c, unread_count: 0 } : c
+        ));
+
         try {
             await fetch(`${API_ENDPOINTS.BASE}/messages/mark-read/${partnerAddr}`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            setConversations(prev => prev.map(c =>
-                c.user.address.toLowerCase() === partnerAddr.toLowerCase() ? { ...c, unread_count: 0 } : c
-            ));
-        } catch (e) { }
+        } catch (e) { console.error("Mark read failed", e); }
     };
 
     const handleManualDecrypt = async (msg) => {

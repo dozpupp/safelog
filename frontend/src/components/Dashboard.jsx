@@ -112,7 +112,7 @@ export default function Dashboard() {
     // Current app structure: Messenger component calls useMessenger. 
     // To get unread count at Dashboard level, we must call useMessenger here.
     // To get unread count at Dashboard level, we must call useMessenger here.
-    const { unreadCount, lastEvent } = useMessenger();
+    const { unreadCount, lastEvent, setActiveConversation } = useMessenger();
 
     // Listen for Real-time Events
     React.useEffect(() => {
@@ -124,6 +124,13 @@ export default function Dashboard() {
             setTimeout(() => updateProgress(0, ""), 3000);
         }
     }, [lastEvent]);
+
+    // Clear active conversation when switching away from Messenger
+    React.useEffect(() => {
+        if (currentView !== 'messenger') {
+            setActiveConversation(null);
+        }
+    }, [currentView]);
 
     const handleMultisigCreateSuccess = () => {
         setIsMultisigCreateOpen(false);
