@@ -40,48 +40,83 @@ export const MessengerProvider = ({ children }) => {
 
     // WebSocket Setup
     useEffect(() => {
-        if (!user || user.authType === 'metamask') return; // TrustKeys only for now? Or both? Original code checked authType === 'trustkeys'
+        if (!user || user.authType === 'metamask') return;
 
-        // Close existing if user changes (rare)
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
+        let ws = null;
+        let heartbeatInterval = null;
+        let reconnectTimeout = null;
+        let retryCount = 0;
+        const maxRetries = 10;
+        let isUnmounting = false;
 
-        const url = API_ENDPOINTS.BASE.replace('http', 'ws');
-        const wsUrl = `${url}/ws`;
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        const connect = () => {
+            if (isUnmounting) return;
 
-        ws.onopen = () => {
-            console.log("WS Connected via Context");
-            ws.send(JSON.stringify({ type: 'AUTH', token }));
-        };
+            const url = API_ENDPOINTS.BASE.replace('http', 'ws');
+            const wsUrl = `${url}/ws`;
+            ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
 
-        ws.onmessage = async (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.type === 'NEW_MESSAGE') {
-                    await handleIncomingMessage(data.message);
-                } else if (data.type === 'SECRET_SHARED') {
-                    // Signal to listeners
-                    console.log("WS Event: SECRET_SHARED");
-                    setLastEvent({ type: 'SECRET_SHARED', timestamp: Date.now(), data: data });
+            ws.onopen = () => {
+                console.log("WS Connected via Context");
+                retryCount = 0; // Reset retry count on success
+                ws.send(JSON.stringify({ type: 'AUTH', token }));
+
+                // Start Heartbeat
+                if (heartbeatInterval) clearInterval(heartbeatInterval);
+                heartbeatInterval = setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        console.debug("WS Sending PING");
+                        ws.send(JSON.stringify({ type: 'PING' }));
+                    }
+                }, 30000); // 30s Heartbeat
+            };
+
+            ws.onmessage = async (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'NEW_MESSAGE') {
+                        await handleIncomingMessage(data.message);
+                    } else if (data.type === 'SECRET_SHARED') {
+                        console.log("WS Event: SECRET_SHARED");
+                        setLastEvent({ type: 'SECRET_SHARED', timestamp: Date.now(), data: data });
+                    }
+                } catch (e) {
+                    console.error("WS Parse Error", e);
                 }
-            } catch (e) {
-                console.error("WS Parse Error", e);
-            }
+            };
+
+            ws.onclose = (e) => {
+                if (heartbeatInterval) clearInterval(heartbeatInterval);
+                console.log(`WS Disconnected (Code: ${e.code})`);
+
+                // Reconnect logic
+                if (!isUnmounting && retryCount < maxRetries) {
+                    const timeout = Math.min(1000 * (2 ** retryCount), 30000); // Exponential backoff max 30s
+                    console.log(`WS Reconnecting in ${timeout}ms...`);
+                    reconnectTimeout = setTimeout(() => {
+                        retryCount++;
+                        connect();
+                    }, timeout);
+                }
+            };
+
+            ws.onerror = (err) => {
+                console.error("WS Error:", err);
+                ws.close();
+            };
         };
 
-        ws.onclose = () => {
-            console.log("WS Disconnected");
-        };
+        connect();
 
         return () => {
-            if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+            isUnmounting = true;
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (wsRef.current) {
                 wsRef.current.close();
+                wsRef.current = null;
             }
-            wsRef.current = null;
         };
     }, [user?.address, token]); // Only re-connect if user actually changes
 
