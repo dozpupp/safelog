@@ -50,8 +50,10 @@ export default function Login() {
                 await unlockWithBiometrics();
             } catch (err) {
                 console.error("Biometric Login error:", err);
-                // If failed, fall back to vault modal?
-                setError(`Biometric failed: ${err.message}. Try password.`);
+                // Fail silently if not setup, just show modal
+                if (!err.message.includes("Biometrics not set up")) {
+                    setError(`Biometric failed: ${err.message}. Try password.`);
+                }
                 setShowVaultModal(true);
             } finally {
                 setLoading(false);
