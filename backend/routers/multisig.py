@@ -91,16 +91,16 @@ def list_multisig_workflows(current_user: models.User = Depends(get_current_user
     # Using python filtering for simplicity unless perf is issue, OR union query.
     # Simple Union query:
     
-    # Owned
-    owned = db.query(models.MultisigWorkflow).filter(models.MultisigWorkflow.owner_address == current_user.address).all()
+    # Owned - Eager load secret to avoid N+1 and ensure we have it for validation
+    owned = db.query(models.MultisigWorkflow).options(joinedload(models.MultisigWorkflow.secret)).filter(models.MultisigWorkflow.owner_address == current_user.address).all()
     
     # Helper to fetch workflows where I am signer
     signed_subq = db.query(models.MultisigWorkflowSigner.workflow_id).filter(models.MultisigWorkflowSigner.user_address == current_user.address)
-    as_signer = db.query(models.MultisigWorkflow).filter(models.MultisigWorkflow.id.in_(signed_subq)).all()
+    as_signer = db.query(models.MultisigWorkflow).options(joinedload(models.MultisigWorkflow.secret)).filter(models.MultisigWorkflow.id.in_(signed_subq)).all()
 
     # Helper to fetch workflows where I am recipient (ONLY COMPLETED)
     recipient_subq = db.query(models.MultisigWorkflowRecipient.workflow_id).filter(models.MultisigWorkflowRecipient.user_address == current_user.address)
-    as_recipient = db.query(models.MultisigWorkflow).filter(
+    as_recipient = db.query(models.MultisigWorkflow).options(joinedload(models.MultisigWorkflow.secret)).filter(
         models.MultisigWorkflow.id.in_(recipient_subq),
         models.MultisigWorkflow.status == 'completed'
     ).all()
@@ -110,6 +110,10 @@ def list_multisig_workflows(current_user: models.User = Depends(get_current_user
     
     response_list = []
     for wf in all_wf_orm.values():
+        # Check if secret exists (Data Corruption Handling)
+        if not wf.secret:
+            continue
+            
         val = schemas.MultisigWorkflowResponse.from_orm(wf)
         
         # If I am owner, fetch and attach key
