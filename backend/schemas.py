@@ -23,10 +23,12 @@ class UserResponse(UserBase):
 class SecretBase(BaseModel):
     name: str = Field(..., max_length=200)
     type: str = Field("standard") # 'standard' | 'signed_document'
-    # 50MB limit for encrypted files (50 * 1024 * 1024 approx 52 million chars)
-    # Base64 overhead typically 33%, so a 35MB file becomes ~48MB text.
-    encrypted_data: str = Field(..., max_length=52_500_000)
-    encrypted_key: str = Field(..., max_length=52_500_000) # Key encrypted for Owner (or Viewer in Response)
+    # 16MB limit for encrypted files
+    # Factor: File -> Base64 (1.33x) -> Encrypt/Hex (2x) = ~2.66x size
+    # 5MB * 2.66 = ~13.3MB. Setting 16MB for safety.
+    encrypted_data: str = Field(..., max_length=16_000_000)
+    # Key is small, keeping strict limit
+    encrypted_key: str = Field(..., max_length=50_000) 
 
 class SecretCreate(SecretBase):
     pass
@@ -45,7 +47,7 @@ class SecretResponse(SecretBase):
 class AccessGrantCreate(BaseModel):
     secret_id: int
     grantee_address: str = Field(..., max_length=20000)
-    encrypted_key: str = Field(..., max_length=52_500_000) # Full content is temporarily stored here in current architecture
+    encrypted_key: str = Field(..., max_length=50_000) # Key encrypted for grantee
     expires_in: Optional[int] = None # Seconds
 
 class AccessGrantResponse(BaseModel):
@@ -65,7 +67,8 @@ class AccessGrantResponse(BaseModel):
 class DocumentBase(BaseModel):
     name: str = Field(..., max_length=200)
     content_hash: str = Field(..., max_length=500)
-    signature: str = Field(..., max_length=52_500_000)
+    # 16MB to support potential embedded signatures
+    signature: str = Field(..., max_length=16_000_000)
 
 class DocumentCreate(DocumentBase):
     pass
@@ -81,7 +84,7 @@ class DocumentResponse(DocumentBase):
 
 class LoginRequest(BaseModel):
     address: str = Field(..., max_length=20000)
-    signature: str = Field(..., max_length=52_500_000)
+    signature: str = Field(..., max_length=16_000_000)
     nonce: str = Field(..., max_length=200)
     encryption_public_key: Optional[str] = Field(None, max_length=20000)
     username: Optional[str] = Field(None, max_length=200)
@@ -145,14 +148,13 @@ class MultisigWorkflowResponse(MultisigWorkflowBase):
         from_attributes = True
 
 class MultisigSignatureRequest(BaseModel):
-    # Reverting to 50MB. Empirical evidence shows 64KB is exceeded in some user scenarios.
-    # This suggests the signature payload might include attached content or metadata in some flows.
-    signature: str = Field(..., max_length=52_500_000)
+    # 16MB limit
+    signature: str = Field(..., max_length=16_000_000)
     recipient_keys: Optional[dict[str, str]] = None # Only provided by the last signer
 
 class MessageBase(BaseModel):
     recipient_address: str = Field(..., max_length=20000)
-    content: str = Field(..., max_length=52_500_000) # Encrypted Blob
+    content: str = Field(..., max_length=16_000_000) # Encrypted Blob
 
 class MessageCreate(MessageBase):
     pass

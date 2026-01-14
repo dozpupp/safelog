@@ -11,7 +11,8 @@ export default function VaultManager({ onClose }) {
         deleteVaultAccount,
         exportVault,
         importVault,
-        pqcAccount
+        pqcAccount,
+        manageBiometrics
     } = usePQC();
 
     const [accounts, setAccounts] = useState([]);
@@ -59,6 +60,47 @@ export default function VaultManager({ onClose }) {
             setMsg({ type: 'success', text: 'Account deleted' });
             refresh();
         } catch (e) {
+            setMsg({ type: 'error', text: e.message });
+        }
+    };
+
+    // Biometrics
+    const [hasBiometrics, setHasBiometrics] = useState(false);
+
+    useEffect(() => {
+        // Check initial state
+        const checkBio = async () => {
+            // We need to access vaultService directly or expose via context? 
+            // Ideally context exposes it, but let's cheat and import vaultService for read-only check or add to context
+            // Context doesn't expose `hasBiometrics()` method yet.
+            // I will modify PQCContext to expose it, or just use localStorage check for UI state 
+            // (vaultService.hasBiometrics is sync and uses localStorage).
+            const enabled = !!localStorage.getItem('safelog_biometrics');
+            setHasBiometrics(enabled);
+        };
+        checkBio();
+    }, []);
+
+    const toggleBiometrics = async () => {
+        console.log("VaultManager: toggleBiometrics clicked");
+        try {
+            if (hasBiometrics) {
+                if (confirm("Disable FaceID/TouchID unlock?")) {
+                    console.log("VaultManager: Disabling...");
+                    await manageBiometrics(false); // Disable
+                    setHasBiometrics(false);
+                    setMsg({ type: 'success', text: "Biometrics disabled" });
+                }
+            } else {
+                console.log("VaultManager: Enabling...");
+                // Enable
+                await manageBiometrics(true); // Enable (will prompt password)
+                console.log("VaultManager: Enabled via manageBiometrics");
+                setHasBiometrics(true);
+                setMsg({ type: 'success', text: "Biometrics enabled!" });
+            }
+        } catch (e) {
+            console.error("VaultManager: Error", e);
             setMsg({ type: 'error', text: e.message });
         }
     };
@@ -140,6 +182,33 @@ export default function VaultManager({ onClose }) {
                                     </div>
                                 </div>
                             ))}
+
+                            {/* Biometric Settings */}
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+                                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Security</h3>
+                                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg">
+                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.2-2.858.567-4.168" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <div className="font-medium text-slate-900 dark:text-white text-sm">Biometric Unlock</div>
+                                            <div className="text-xs text-slate-500">FaceID / TouchID for quick access</div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={toggleBiometrics}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${hasBiometrics
+                                            ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300'
+                                            : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                                            }`}
+                                    >
+                                        {hasBiometrics ? 'Disable' : 'Enable'}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
 

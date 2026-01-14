@@ -30,11 +30,14 @@ export const PQCProvider = ({ children }) => {
         reject: null
     });
 
+    const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+
     useEffect(() => {
         // Check availability on mount and slightly after (for injection delay)
         const check = () => {
             setIsExtensionAvailable(!!window.trustkeys);
             setHasLocalVault(vaultService.hasVault());
+            setBiometricsEnabled(vaultService.hasBiometrics());
         };
         check();
         const t = setTimeout(check, 500);
@@ -51,7 +54,17 @@ export const PQCProvider = ({ children }) => {
     }, [authType]);
 
     // Internal helper to request password via Modal
-    const requestPassword = (message = "Please enter your vault password to continue.") => {
+    const requestPassword = async (message = "Please enter your vault password to continue.") => {
+        // Auto-Biometrics
+        if (biometricsEnabled) {
+            try {
+                const password = await vaultService.recoverPasswordWithBiometrics();
+                return password;
+            } catch (e) {
+                console.log("Auto-biometrics failed/cancelled, falling back to manual:", e);
+            }
+        }
+
         return new Promise((resolve, reject) => {
             setModalConfig({
                 isOpen: true,
@@ -307,6 +320,19 @@ export const PQCProvider = ({ children }) => {
         return vaultService.importVault(json, password);
     };
 
+    const handleBiometricAuth = async () => {
+        try {
+            const password = await vaultService.recoverPasswordWithBiometrics();
+            if (modalConfig.resolve) {
+                modalConfig.resolve(password);
+            }
+            setModalConfig({ ...modalConfig, isOpen: false, resolve: null, reject: null });
+        } catch (e) {
+            console.error("Biometric auth failed", e);
+            alert("Biometric authentication failed: " + e.message);
+        }
+    };
+
     return (
         <PQCContext.Provider value={{
             pqcAccount,
@@ -329,7 +355,51 @@ export const PQCProvider = ({ children }) => {
             generateSessionKey,
             wrapSessionKey,
             unwrapSessionKey,
-            unwrapManySessionKeys
+            unwrapManySessionKeys,
+            // Biometrics
+            manageBiometrics: async (enable) => {
+                if (enable) {
+                    const password = await requestPassword("Enter password to ENABLE FaceID/TouchID:");
+                    await vaultService.enableBiometrics(password);
+                    setBiometricsEnabled(true);
+                } else {
+                    vaultService.disableBiometrics();
+                    setBiometricsEnabled(false);
+                }
+            },
+            unlockWithBiometrics: async () => {
+                const success = await vaultService.unlockWithBiometrics();
+                if (!success) throw new Error("Biometric Unlock Failed");
+
+                const account = vaultService.getActiveAccount();
+                const accountId = account.dilithium.publicKey;
+                const encryptionKey = account.kyber.publicKey;
+
+                setPqcAccount(accountId);
+                setKyberKey(encryptionKey);
+
+                // Perform login sequence if needed, or just set local state?
+                // Depending on usage, we might want to trigger server login too?
+                // For now, mirroring loginLocalVault but without password arg for signing?
+                // Wait, performServerLogin NEEDS a signing function.
+                // If we unlock with biometrics, we have the PRIVATE KEY in memory now.
+                // So we can sign!
+
+                // We need the password to sign? 
+                // performServerLogin takes a signFn.
+                // vaultService.sign(msg, password) -> NEEDS PASSWORD
+                // If we just unlocked, we don't have the password stored!
+                // We need to pass the password to signFn.
+
+                // FIX: unlockWithBiometrics in vault.js uses recoverPasswordWithBiometrics internally
+                // but usually discards it.
+                // We should probably get it here to pass to signFn.
+
+                const password = await vaultService.recoverPasswordWithBiometrics();
+
+                return performServerLogin(accountId, encryptionKey, (msg) => vaultService.sign(msg, password), account.name);
+            },
+            hasBiometrics: () => biometricsEnabled
         }}>
             {children}
 
@@ -338,6 +408,7 @@ export const PQCProvider = ({ children }) => {
                 message={modalConfig.message}
                 onSubmit={handleModalSubmit}
                 onCancel={handleModalCancel}
+                onBiometric={biometricsEnabled ? handleBiometricAuth : null}
             />
         </PQCContext.Provider>
     );

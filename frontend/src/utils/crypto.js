@@ -610,3 +610,137 @@ export const verifyMessageEth = (message, signature) => {
         return null;
     }
 };
+
+// --- WebAuthn PRF (Biometric Vault) ---
+
+export const checkPrfSupport = async () => {
+    try {
+        if (!window.PublicKeyCredential) return false;
+        // Check for "prf" extension support specifically if possible or just rely on creation
+        // There is no direct query for extensions API in all browsers yet, but we can try/catch
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
+/**
+ * Creates a new WebAuthn credential with PRF enabled.
+ * Returns { credentialId (base64url), prfKey (hex) }
+ */
+export const registerBiometricCredential = async (username) => {
+    // Random challenge
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    // User ID
+    const userId = crypto.getRandomValues(new Uint8Array(16));
+
+    // Generate PRF Input Salt
+    const prfSalt = crypto.getRandomValues(new Uint8Array(32));
+
+    const creationOptions = {
+        publicKey: {
+            challenge: challenge,
+            rp: {
+                name: "SecureLog Vault",
+                id: window.location.hostname
+            },
+            user: {
+                id: userId,
+                name: username,
+                displayName: username
+            },
+            pubKeyCredParams: [
+                { type: "public-key", alg: -7 }, // ES256
+                { type: "public-key", alg: -257 } // RS256
+            ],
+            authenticatorSelection: {
+                residentKey: "required", // Required for RK/PRF usually
+                userVerification: "required"
+            },
+            extensions: {
+                prf: {
+                    eval: {
+                        first: prfSalt // Initial input
+                    }
+                }
+            }
+        }
+    };
+
+    console.log("Creating Credential with PRF...", creationOptions);
+    const credential = await navigator.credentials.create(creationOptions);
+    console.log("Credential Created", credential);
+
+    const extResults = credential.getClientExtensionResults();
+    if (!extResults.prf || !extResults.prf.results || !extResults.prf.results.first) {
+        throw new Error("Device does not support WebAuthn PRF (Biometric Key Derivation).");
+    }
+
+    // Convert results to key
+    const prfBytes = new Uint8Array(extResults.prf.results.first); // 32 bytes usually
+
+    return {
+        credentialId: credential.id, // Base64URL string
+        prfKey: toHex(prfBytes),
+        prfSalt: toHex(prfSalt) // Return the salt used
+    };
+};
+
+/**
+ * Authenticates with an existing credential to derive the PRF key.
+ * Returns prfKey (hex)
+ */
+export const getBiometricKey = async (credentialId, prfSaltHex) => {
+    // Challenge
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+
+    let prfInput;
+    if (prfSaltHex) {
+        prfInput = fromHex(prfSaltHex);
+    } else {
+        // Fallback or Error? 
+        // For legacy/backward compact if needed, but we should always have it now.
+        prfInput = new Uint8Array(32).fill(1);
+    }
+
+    const requestOptions = {
+        publicKey: {
+            challenge: challenge,
+            rpId: window.location.hostname,
+            allowCredentials: [{
+                id: fromBase64Url(credentialId),
+                type: "public-key"
+            }],
+            userVerification: "required",
+            extensions: {
+                prf: {
+                    eval: {
+                        first: prfInput // Must use same input to get same output
+                    }
+                }
+            }
+        }
+    };
+
+    const assertion = await navigator.credentials.get(requestOptions);
+    const extResults = assertion.getClientExtensionResults();
+
+    if (!extResults.prf || !extResults.prf.results || !extResults.prf.results.first) {
+        throw new Error("Biometric auth succeeded but PRF key was not returned.");
+    }
+
+    const prfBytes = new Uint8Array(extResults.prf.results.first);
+    return toHex(prfBytes);
+};
+
+// Helper for Base64URL -> Uint8Array
+const fromBase64Url = (str) => {
+    const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd((base64.length + 3) & ~3, '=');
+    const bin = atob(padded);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+        arr[i] = bin.charCodeAt(i);
+    }
+    return arr;
+};

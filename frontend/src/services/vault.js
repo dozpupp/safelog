@@ -328,6 +328,76 @@ class VaultService {
             }
         }));
     }
+
+    // --- Biometric Authentication (FaceID/TouchID) ---
+
+    hasBiometrics() {
+        const prefs = localStorage.getItem('safelog_biometrics');
+        return !!prefs;
+    }
+
+    async enableBiometrics(password) {
+        if (!window.PublicKeyCredential) throw new Error("Biometrics not supported on this device/browser.");
+
+        // 1. Verify Password First
+        const fullVault = await this._getFullVault(password); // will throw if wrong
+
+        // 2. Register Credential (PRF)
+        // We look up the active account name nicely
+        const activeAcct = fullVault.accounts.find(a => a.id === fullVault.activeAccountId);
+        const name = activeAcct ? activeAcct.name : "SecureLog User";
+
+        const { registerBiometricCredential, encryptSymmetric, checkPrfSupport } = await import('../utils/crypto');
+
+        if (!await checkPrfSupport()) {
+            throw new Error("Your browser does not support the required WebAuthn secure extensions.");
+        }
+
+        const { credentialId, prfKey, prfSalt } = await registerBiometricCredential(name);
+
+        // 3. Encrypt Password with PRF Key
+        // keyHex=prfKey, content=password
+        const encryptedPass = await encryptSymmetric(password, prfKey);
+
+        // 4. Save Preference
+        const prefs = {
+            credentialId,
+            encryptedPass,
+            prfSalt // Store salt
+        };
+        localStorage.setItem('safelog_biometrics', JSON.stringify(prefs));
+
+        return true;
+    }
+
+    async recoverPasswordWithBiometrics() {
+        if (!this.hasBiometrics()) throw new Error("Biometrics not set up.");
+
+        const prefsString = localStorage.getItem('safelog_biometrics');
+        if (!prefsString) throw new Error("No biometric preferences found.");
+        const prefs = JSON.parse(prefsString);
+
+        // 1. Authenticate & Get Key
+        const { getBiometricKey, decryptSymmetric } = await import('../utils/crypto');
+
+        const prfKey = await getBiometricKey(prefs.credentialId, prefs.prfSalt);
+
+        // 2. Decrypt Password
+        const password = await decryptSymmetric(prefs.encryptedPass, prfKey);
+        if (!password) throw new Error("Biometric decryption failed.");
+
+        return password;
+    }
+
+    async unlockWithBiometrics() {
+        const password = await this.recoverPasswordWithBiometrics();
+        // 3. Unlock Vault
+        return await this.unlock(password);
+    }
+
+    disableBiometrics() {
+        localStorage.removeItem('safelog_biometrics');
+    }
 }
 
 export const vaultService = new VaultService();
