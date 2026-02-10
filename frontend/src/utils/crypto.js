@@ -505,6 +505,36 @@ export const decryptSymmetric = async (encryptedObject, keyHex) => {
     const dec = new TextDecoder();
     return dec.decode(decrypted);
 };
+
+// --- Binary Chunk Encryption (for chunked file uploads) ---
+
+const importAesKey = async (keyHex) => {
+    const keyBytes = fromHex(keyHex);
+    return crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["encrypt", "decrypt"]);
+};
+
+/**
+ * Encrypt a binary chunk (Uint8Array) with AES-GCM.
+ * Returns { iv: hex, ciphertext: hex }
+ */
+export const encryptChunk = async (chunkBytes, keyHex) => {
+    const key = await importAesKey(keyHex);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, chunkBytes);
+    return { iv: toHex(iv), ciphertext: toHex(new Uint8Array(encrypted)) };
+};
+
+/**
+ * Decrypt a binary chunk. Returns Uint8Array (raw bytes).
+ */
+export const decryptChunk = async (ivHex, ciphertextHex, keyHex) => {
+    const key = await importAesKey(keyHex);
+    const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: fromHex(ivHex) }, key, fromHex(ciphertextHex)
+    );
+    return new Uint8Array(decrypted);
+};
+
 // --- Vault Security ---
 
 // Helper to derive key

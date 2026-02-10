@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePQC } from '../context/PQCContext';
 import API_ENDPOINTS from '../config';
 import { encryptData, decryptData, generateSymmetricKey, encryptSymmetric, decryptSymmetric } from '../utils/crypto';
+import { uploadChunkedFile, downloadChunkedFile, CHUNK_SIZE } from '../utils/fileChunks';
 
 export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = {}) {
     const { token, user } = useAuth();
@@ -103,6 +104,68 @@ export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = 
 
             const decrypted = await decryptSymmetric(encDataObj, fileKey);
 
+            // Check if this is a chunked file (metadata-only in encrypted_data)
+            try {
+                const meta = JSON.parse(decrypted);
+                if (meta.total_chunks && meta.total_chunks > 0 && meta.file_name) {
+                    // Chunked file — download and reassemble
+                    reportProgress(60, 'Downloading file chunks...');
+                    const blob = await downloadChunkedFile(
+                        isShared ? item.secret.id : item.id,
+                        fileKey,
+                        token,
+                        API_ENDPOINTS.BASE,
+                        meta.total_chunks,
+                        meta.mime_type,
+                        (pct, msg) => reportProgress(60 + Math.round(pct * 0.35), msg)
+                    );
+                    const blobUrl = URL.createObjectURL(blob);
+                    // Store as a JSON string so SecretItem can detect and render it
+                    const result = JSON.stringify({
+                        type: 'file',
+                        name: meta.file_name,
+                        mime: meta.mime_type,
+                        content: blobUrl,
+                        chunked: true,
+                        size: meta.total_size
+                    });
+                    const key = isShared ? `shared_${item.id}` : item.id;
+                    setDecryptedSecrets(prev => ({ ...prev, [key]: result }));
+                    reportProgress(100, 'Decrypted');
+                    setTimeout(() => reportProgress(0, ''), 500);
+                    return result;
+                }
+            } catch (_) {
+                // Not JSON or not chunked — proceed with normal flow
+            }
+
+            // Check for legacy file format (base64 in JSON) -> Convert to Blob URL for consistency
+            try {
+                const parsed = JSON.parse(decrypted);
+                if (parsed && parsed.type === 'file' && parsed.content && parsed.content.startsWith('data:')) {
+                    // Convert data URI to Blob
+                    const byteString = atob(parsed.content.split(',')[1]);
+                    const mimeString = parsed.content.split(',')[0].split(':')[1].split(';')[0];
+                    const ab = new ArrayBuffer(byteString.length);
+                    const ia = new Uint8Array(ab);
+                    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+                    const blob = new Blob([ab], { type: mimeString });
+                    const blobUrl = URL.createObjectURL(blob);
+
+                    const result = JSON.stringify({
+                        ...parsed,
+                        content: blobUrl, // Replace base64 with blob URL
+                        chunked: false // Explicitly mark as not chunked (legacy)
+                    });
+
+                    const key = isShared ? `shared_${item.id}` : item.id;
+                    setDecryptedSecrets(prev => ({ ...prev, [key]: result }));
+                    reportProgress(100, 'Decrypted');
+                    setTimeout(() => reportProgress(0, ''), 500);
+                    return result;
+                }
+            } catch (_) { }
+
             const key = isShared ? `shared_${item.id}` : item.id;
             setDecryptedSecrets(prev => ({ ...prev, [key]: decrypted }));
             reportProgress(100, 'Decrypted');
@@ -115,7 +178,7 @@ export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = 
         }
     };
 
-    const createSecret = async (name, type, rawContent, isSigned = false) => {
+    const createSecret = async (name, type, rawContent, isSigned = false, file = null) => {
         reportProgress(10, 'Preparing Envelope...');
         try {
             // 1. Generate AES-256 Key
@@ -139,24 +202,39 @@ export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = 
 
             // 3. Encrypt Content with AES Key
             reportProgress(40, 'Encrypting Content (AES)...');
-            const encryptedContentIdx = await encryptSymmetric(payloadToEncrypt, fileKey);
-            // We store the JSON result string as 'encrypted_data' (which contains iv + ciphertext)
-            const encryptedDataStr = JSON.stringify(encryptedContentIdx);
+
+            let encryptedDataStr;
+            const isChunkedFile = (file && !isSigned && secretType === 'file');
+
+            if (isChunkedFile) {
+                // For chunked files: store only metadata in encrypted_data
+                const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                const metadata = JSON.stringify({
+                    file_name: file.name,
+                    mime_type: file.type || 'application/octet-stream',
+                    total_chunks: totalChunks,
+                    total_size: file.size,
+                    chunk_size: CHUNK_SIZE
+                });
+                const encryptedMeta = await encryptSymmetric(metadata, fileKey);
+                encryptedDataStr = JSON.stringify(encryptedMeta);
+            } else {
+                const encryptedContentIdx = await encryptSymmetric(payloadToEncrypt, fileKey);
+                encryptedDataStr = JSON.stringify(encryptedContentIdx);
+            }
 
             // 4. Encrypt AES Key for Owner (Me)
-            reportProgress(60, 'Encrypting Key...');
+            reportProgress(50, 'Encrypting Key...');
             let encryptedKeyForMe;
             if (authType === 'trustkeys') {
-                // Encrypt key using PQC (Hybrid)
                 const res = await encryptPQC(fileKey, encryptionPublicKey);
                 encryptedKeyForMe = JSON.stringify(res);
             } else {
-                // Encrypt key using MetaMask (Eth)
                 encryptedKeyForMe = encryptData(fileKey, encryptionPublicKey);
             }
 
-            // 5. Send to API
-            reportProgress(80, 'Saving...');
+            // 5. Send to API (creates the secret record)
+            reportProgress(60, 'Creating secret...');
             const res = await fetch(API_ENDPOINTS.SECRETS.CREATE, {
                 method: 'POST',
                 headers: {
@@ -167,13 +245,27 @@ export function useSecrets(authType, encryptionPublicKey, pqcAccount, options = 
                     name,
                     type: secretType,
                     encrypted_data: encryptedDataStr,
-                    encrypted_key: encryptedKeyForMe // NEW Field
+                    encrypted_key: encryptedKeyForMe
                 })
             });
 
             if (!res.ok) throw new Error(await res.text());
-            await fetchSecrets();
+            const createdSecret = await res.json();
 
+            // 6. Upload chunks if it's a chunked file
+            if (isChunkedFile) {
+                reportProgress(65, 'Uploading encrypted chunks...');
+                await uploadChunkedFile(
+                    file,
+                    createdSecret.id,
+                    fileKey,
+                    token,
+                    API_ENDPOINTS.BASE,
+                    (pct, msg) => reportProgress(65 + Math.round(pct * 0.30), msg)
+                );
+            }
+
+            await fetchSecrets();
             reportProgress(100, 'Saved');
             setTimeout(() => reportProgress(0, ''), 500);
             return true;

@@ -21,6 +21,9 @@ export const API_ENDPOINTS = {
         UPDATE: (secretId) => `${API_BASE_URL}/secrets/${secretId}`,
         DELETE: (secretId) => `${API_BASE_URL}/secrets/${secretId}`,
         REVOKE: (grantId) => `${API_BASE_URL}/secrets/share/${grantId}`,
+        CHUNKS_UPLOAD: `${API_BASE_URL}/secrets/chunks`,
+        CHUNKS_LIST: (secretId) => `${API_BASE_URL}/secrets/${secretId}/chunks`,
+        CHUNK: (secretId, index) => `${API_BASE_URL}/secrets/${secretId}/chunks/${index}`,
     }
 };
 

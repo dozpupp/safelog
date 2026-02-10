@@ -7,6 +7,7 @@ import models, schemas
 from database import get_db
 from dependencies import get_current_user
 from websocket_manager import manager
+import config
 
 router = APIRouter(tags=["secrets"]) # Secrets and Documents mixed? Or should I separate? Plan said secrets.py
 
@@ -243,3 +244,106 @@ def create_document(doc: schemas.DocumentCreate, current_user: models.User = Dep
 @router.get("/documents", response_model=List[schemas.DocumentResponse])
 def get_documents(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(models.Document).filter(models.Document.owner_address == current_user.address).all()
+
+
+# --- File Chunks ---
+
+def _check_secret_access(secret_id: int, user_address: str, db: Session) -> models.Secret:
+    """Verify the user owns the secret or has an AccessGrant to it."""
+    secret = db.query(models.Secret).filter(models.Secret.id == secret_id).first()
+    if not secret:
+        raise HTTPException(status_code=404, detail="Secret not found")
+
+    if secret.owner_address == user_address:
+        return secret
+
+    grant = db.query(models.AccessGrant).filter(
+        models.AccessGrant.secret_id == secret_id,
+        models.AccessGrant.grantee_address == user_address
+    ).first()
+    if not grant:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    return secret
+
+
+@router.post("/secrets/chunks", status_code=201)
+@limiter.limit("120/minute")
+def upload_chunk(request: Request, chunk: schemas.FileChunkUpload,
+                 current_user: models.User = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """Upload a single encrypted file chunk. Only the secret owner can upload."""
+    secret = db.query(models.Secret).filter(models.Secret.id == chunk.secret_id).first()
+    if not secret:
+        raise HTTPException(status_code=404, detail="Secret not found")
+    if secret.owner_address != current_user.address:
+        raise HTTPException(status_code=403, detail="Only the owner can upload chunks")
+
+    # Check Total Size Limit
+    # Calculate current usage
+    current_size = db.query(models.FileChunk.encrypted_data).filter(
+        models.FileChunk.secret_id == chunk.secret_id
+    ).all()
+    
+    # encrypted_data is hex -> 2 hex chars = 1 byte. 
+    # But wait, the limit is likely on the *original* file size or the *encrypted* storage size?
+    # Config says MAX_TOTAL_FILE_SIZE (50MB). The uploaded chunks are encrypted (slightly larger).
+    # Let's enforcing against the stored hex string length / 2 approx.
+    # To avoid fetching all data, we can sum the lengths in SQL if supported, or just iterate metadata if we stored size.
+    # Since we don't store chunk size in DB, we have to estimate or fetch lengths.
+    # Fetching all encrypted_data is bad for memory. 
+    # Better approach: Add `size` column to FileChunk? Or just use `length(encrypted_data)` in SQL.
+    # SQLite supports `length()`.
+    
+    from sqlalchemy import func
+    total_stored_size_hex = db.query(func.sum(func.length(models.FileChunk.encrypted_data))).filter(
+        models.FileChunk.secret_id == chunk.secret_id
+    ).scalar() or 0
+    
+    current_total_bytes = total_stored_size_hex / 2
+    new_chunk_size = len(chunk.encrypted_data) / 2
+    
+    if (current_total_bytes + new_chunk_size) > config.MAX_TOTAL_FILE_SIZE:
+         raise HTTPException(status_code=413, detail="File too large (Max 50MB)")
+
+    new_chunk = models.FileChunk(
+        secret_id=chunk.secret_id,
+        chunk_index=chunk.chunk_index,
+        iv=chunk.iv,
+        encrypted_data=chunk.encrypted_data
+    )
+    db.add(new_chunk)
+    db.commit()
+    return {"status": "ok", "chunk_index": chunk.chunk_index}
+
+
+@router.get("/secrets/{secret_id}/chunks", response_model=List[schemas.FileChunkResponse])
+def list_chunks(secret_id: int,
+                current_user: models.User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    """List all chunks for a secret (metadata only if needed, or full data)."""
+    _check_secret_access(secret_id, current_user.address, db)
+
+    chunks = db.query(models.FileChunk).filter(
+        models.FileChunk.secret_id == secret_id
+    ).order_by(models.FileChunk.chunk_index).all()
+
+    return chunks
+
+
+@router.get("/secrets/{secret_id}/chunks/{chunk_index}", response_model=schemas.FileChunkResponse)
+def get_chunk(secret_id: int, chunk_index: int,
+              current_user: models.User = Depends(get_current_user),
+              db: Session = Depends(get_db)):
+    """Download a single encrypted chunk by index."""
+    _check_secret_access(secret_id, current_user.address, db)
+
+    chunk = db.query(models.FileChunk).filter(
+        models.FileChunk.secret_id == secret_id,
+        models.FileChunk.chunk_index == chunk_index
+    ).first()
+
+    if not chunk:
+        raise HTTPException(status_code=404, detail=f"Chunk {chunk_index} not found")
+
+    return chunk

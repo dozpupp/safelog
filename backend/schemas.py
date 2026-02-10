@@ -44,6 +44,29 @@ class SecretResponse(SecretBase):
         orm_mode = True
         from_attributes = True
 
+class FileChunkUpload(BaseModel):
+    secret_id: int
+    chunk_index: int
+    iv: str = Field(..., max_length=100)
+    encrypted_data: str = Field(..., max_length=2_100_000)  # ~1MB chunk hex-encoded
+
+class FileChunkResponse(BaseModel):
+    chunk_index: int
+    iv: str
+    encrypted_data: str
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
+class FileMetadata(BaseModel):
+    """Stored in Secret.encrypted_data for chunked files instead of the full content."""
+    file_name: str
+    mime_type: str
+    total_chunks: int
+    total_size: int       # Original file size in bytes
+    chunk_size: int       # Bytes per chunk before encryption
+
 class AccessGrantCreate(BaseModel):
     secret_id: int
     grantee_address: str = Field(..., max_length=20000)

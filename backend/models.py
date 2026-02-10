@@ -29,12 +29,13 @@ class Secret(Base):
     id = Column(Integer, primary_key=True, index=True)
     owner_address = Column(String, ForeignKey("users.address"))
     name = Column(String, index=True)
-    type = Column(String, default="standard") # 'standard' or 'signed_document'
-    encrypted_data = Column(Text) # JSON blob: {version, nonce, ephemPublicKey, ciphertext}
+    type = Column(String, default="standard") # 'standard' | 'file' | 'signed_document'
+    encrypted_data = Column(Text) # AES-encrypted content or file metadata JSON
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     owner = relationship("User", back_populates="secrets")
     access_grants = relationship("AccessGrant", back_populates="secret")
+    chunks = relationship("FileChunk", back_populates="secret", cascade="all, delete-orphan")
 
 class AccessGrant(Base):
     __tablename__ = "access_grants"
@@ -124,6 +125,18 @@ User.documents = relationship("Document", back_populates="owner")
 User.workflows = relationship("MultisigWorkflow", back_populates="owner")
 User.sent_messages = relationship("Message", foreign_keys=[Message.sender_address], back_populates="sender")
 User.received_messages = relationship("Message", foreign_keys=[Message.recipient_address], back_populates="recipient")
+
+class FileChunk(Base):
+    __tablename__ = "file_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    secret_id = Column(Integer, ForeignKey("secrets.id"), index=True)
+    chunk_index = Column(Integer)  # 0-based ordering
+    encrypted_data = Column(Text)  # AES-GCM encrypted chunk (hex)
+    iv = Column(String)            # Per-chunk IV (hex)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    secret = relationship("Secret", back_populates="chunks")
 
 class RecoveryShare(Base):
     __tablename__ = "recovery_shares"
