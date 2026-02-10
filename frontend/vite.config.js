@@ -15,6 +15,11 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       allowedHosts: allowedHosts
+    },
+    test: {
+      globals: true,
+      environment: 'jsdom',
+      setupFiles: './src/test/setup.js',
     }
   }
 })
