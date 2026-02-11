@@ -188,6 +188,56 @@ class HistoryRequest(BaseModel):
     limit: int = Field(50, ge=1, le=100) # Default 50, Max 100
     offset: int = Field(0, ge=0)
 
+# ── Group Channels ──────────────────────────────────────────────
+
+class GroupChannelCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    member_addresses: List[str] = Field(..., min_length=1)
+
+class GroupMemberResponse(BaseModel):
+    user_address: str
+    role: str
+    joined_at: datetime
+    user: Optional[UserResponse] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class GroupChannelResponse(BaseModel):
+    id: str
+    name: str
+    owner_address: str
+    created_at: datetime
+    members: List[GroupMemberResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+class GroupMessageCreate(BaseModel):
+    content: str = Field(..., max_length=16_000_000)
+
+class GroupMessageResponse(BaseModel):
+    id: int
+    channel_id: str
+    sender_address: str
+    content: str
+    created_at: datetime
+    sender: Optional[UserResponse] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class GroupConversationResponse(BaseModel):
+    channel: GroupChannelResponse
+    last_message: Optional[GroupMessageResponse] = None
+    unread_count: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+class GroupHistoryRequest(BaseModel):
+    limit: int = Field(50, ge=1, le=100)
+    offset: int = Field(0, ge=0)
+
+class GroupMemberAdd(BaseModel):
+    user_address: str = Field(..., max_length=20000)
+
 class Token(BaseModel):
     access_token: str
     token_type: str

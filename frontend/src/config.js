@@ -24,6 +24,16 @@ export const API_ENDPOINTS = {
         CHUNKS_UPLOAD: `${API_BASE_URL}/secrets/chunks`,
         CHUNKS_LIST: (secretId) => `${API_BASE_URL}/secrets/${secretId}/chunks`,
         CHUNK: (secretId, index) => `${API_BASE_URL}/secrets/${secretId}/chunks/${index}`,
+    },
+    GROUPS: {
+        LIST: `${API_BASE_URL}/groups`,
+        CREATE: `${API_BASE_URL}/groups`,
+        GET: (channelId) => `${API_BASE_URL}/groups/${channelId}`,
+        MESSAGES: (channelId) => `${API_BASE_URL}/groups/${channelId}/messages`,
+        HISTORY: (channelId) => `${API_BASE_URL}/groups/${channelId}/history`,
+        MEMBERS: (channelId) => `${API_BASE_URL}/groups/${channelId}/members`,
+        REMOVE_MEMBER: (channelId, addr) => `${API_BASE_URL}/groups/${channelId}/members/${addr}`,
+        MARK_READ: (channelId) => `${API_BASE_URL}/groups/${channelId}/mark-read`,
     }
 };
 
