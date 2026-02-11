@@ -1,16 +1,16 @@
 import React from 'react';
+import { NavLink } from 'react-router-dom';
 import { useMessenger } from '../hooks/useMessenger';
 import { Lock, FolderGit2 } from 'lucide-react';
 
 export default function DashboardSidebar({
     currentView,
-    setCurrentView,
     secrets,
     workflows,
     sharedSecrets,
     decryptedSecrets,
     actionRequiredCount,
-    onRefreshSecrets // New prop
+    onRefreshSecrets
 }) {
     // Only this component will re-render when messenger events occur (typing, new message)
     const { unreadCount, lastEvent } = useMessenger();
@@ -20,12 +20,6 @@ export default function DashboardSidebar({
 
     React.useEffect(() => {
         if (lastEvent && lastEvent.type === 'SECRET_SHARED') {
-            // Prevent infinite loop: Only process if this is a NEW event
-            // Assuming lastEvent has a unique 'id' or 'timestamp'. 
-            // If not, we can use the object reference itself if it's immutable, but ID is safer.
-            // Let's check the context file, but usually events have IDs.
-            // Based on context below, message events have IDs. generic events might not?
-            // If explicit ID missing, we can use timestamp or just JSON.stringify as a fallback key
             const eventId = lastEvent.message?.id || lastEvent.timestamp || JSON.stringify(lastEvent);
 
             if (lastProcessedEventId.current !== eventId) {
@@ -39,18 +33,24 @@ export default function DashboardSidebar({
     }, [lastEvent, onRefreshSecrets]);
 
     const navItems = [
-        { id: 'secrets', label: 'Secrets', icon: <Lock className="w-4 h-4" /> },
-        { id: 'multisig', label: 'Multisig', icon: <FolderGit2 className="w-4 h-4" /> },
+        { id: 'secrets', to: '/secrets', label: 'Secrets', icon: <Lock className="w-4 h-4" /> },
+        { id: 'multisig', to: '/multisig', label: 'Multisig', icon: <FolderGit2 className="w-4 h-4" /> },
     ];
+
+    const baseLinkClasses = "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium";
+    const activeLinkClasses = "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20";
+    const inactiveLinkClasses = "text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-900";
 
     return (
         <div className="lg:col-span-1 space-y-6">
             <nav className="space-y-1">
                 {navItems.map(item => (
-                    <button
+                    <NavLink
                         key={item.id}
-                        onClick={() => setCurrentView(item.id)}
-                        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium ${currentView === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-900'}`}
+                        to={item.to}
+                        className={({ isActive }) =>
+                            `${baseLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`
+                        }
                     >
                         <div className="flex items-center gap-3">
                             {item.icon}
@@ -71,12 +71,14 @@ export default function DashboardSidebar({
                                 ) : null;
                             })()
                         )}
-                    </button>
+                    </NavLink>
                 ))}
                 {/* Messenger Tab */}
-                <button
-                    onClick={() => setCurrentView('messenger')}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium ${currentView === 'messenger' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-900'}`}
+                <NavLink
+                    to="/messenger"
+                    className={({ isActive }) =>
+                        `${baseLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`
+                    }
                 >
                     <div className="flex items-center gap-3">
                         <span className="text-lg">💬</span> Messenger
@@ -86,7 +88,7 @@ export default function DashboardSidebar({
                             {unreadCount}
                         </span>
                     )}
-                </button>
+                </NavLink>
             </nav>
 
             {/* Quick Stats or Info */}

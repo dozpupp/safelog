@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 // Mock all context providers and heavy components to test App's wiring
 vi.mock('../context/AuthContext', () => ({
@@ -30,14 +31,23 @@ import App from '../App';
 
 describe('App', () => {
     it('renders without crashing', () => {
-        render(<App />);
+        render(
+            <MemoryRouter>
+                <App />
+            </MemoryRouter>
+        );
         // All providers are rendered in the expected nesting
         expect(screen.getByTestId('theme-provider')).toBeInTheDocument();
         expect(screen.getByTestId('auth-provider')).toBeInTheDocument();
     });
 
-    it('shows login when not authenticated', () => {
-        render(<App />);
-        expect(screen.getByTestId('login-page')).toBeInTheDocument();
+    it('shows login when not authenticated', async () => {
+        render(
+            <MemoryRouter initialEntries={['/']}>
+                <App />
+            </MemoryRouter>
+        );
+        // React.lazy components need to be awaited
+        expect(await screen.findByTestId('login-page')).toBeInTheDocument();
     });
 });

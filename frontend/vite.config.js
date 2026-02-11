@@ -14,7 +14,9 @@ export default defineConfig(({ mode }) => {
       nodePolyfills(),
     ],
     server: {
-      allowedHosts: allowedHosts
+      allowedHosts: allowedHosts,
+      // SPA fallback: serve index.html for all routes (React Router handles client-side routing)
+      historyApiFallback: true,
     },
     test: {
       globals: true,

@@ -5,8 +5,7 @@ import { usePQC } from '../context/PQCContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSecrets } from '../hooks/useSecrets';
 import { useMultisig } from '../hooks/useMultisig';
-// import { useMessenger } from '../hooks/useMessenger';
-import { Lock, Sun, Moon, Shield, FolderGit2, Plus, LogOut } from 'lucide-react';
+import { Lock, Sun, Moon, Shield, Plus, LogOut } from 'lucide-react';
 
 // Components
 import GlobalProgressBar from './common/GlobalProgressBar';
@@ -24,7 +23,7 @@ import ProfileModal from './dashboard/ProfileModal';
 import Messenger from './Messenger';
 import DashboardSidebar from './DashboardSidebar';
 
-export default function Dashboard() {
+export default function Dashboard({ view = 'secrets' }) {
     const { user, authType, logout, setUser, token } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const { currentAccount, encryptionPublicKey: ethKey } = useWeb3();
@@ -66,8 +65,7 @@ export default function Dashboard() {
         actionRequiredCount
     } = useMultisig();
 
-    // View State
-    const [currentView, setCurrentView] = useState('secrets'); // 'secrets', 'messenger', 'multisig'
+    // Modal States
     const [isCreating, setIsCreating] = useState(false);
     const [showVaultManager, setShowVaultManager] = useState(false);
 
@@ -108,73 +106,10 @@ export default function Dashboard() {
         }
     };
 
-    // We need messenger state for badges. 
-    // Optimization: Lift useMessenger to here? Or create light version?
-    // Current app structure: Messenger component calls useMessenger. 
-    // To get unread count at Dashboard level, we must call useMessenger here.
-    // To get unread count at Dashboard level, we must call useMessenger here.
-    // const { unreadCount, lastEvent, setActiveConversation } = useMessenger();
-    // MOVED TO SIDEBAR: unreadCount is now internal to DashboardSidebar
-    // lastEvent and setActiveConversation might be needed here?
-    // lastEvent is used for SECRET_SHARED toast.
-    // setActiveConversation is used to clear on view change.
-
-    // We still need useMessenger for global events if we want them here, but we can't trigger full re-render on unread count.
-    // The previous implementation of useMessenger context likely exposes a single state object.
-
-    // If I import useMessenger here, I WILL re-render on any update.
-    // So I must NOT use it here if I want to avoid re-renders.
-
-    // But 'lastEvent' was used for a Toast. 
-    // And 'setActiveConversation(null)' was used when changing views.
-
-    // Compromise: We keep useMessenger here for Logic, but we assume the Context provider is optimized OR we accept re-renders for 'lastEvent' but maybe 'unreadCount' updates were the most frequent?
-    // Actually, 'unreadCount' updates happen heavily during typing if we tracked every message.
-
-    // If we simply remove it, we lose the "New Secret Shared" toast and the "Clear Active Conversation" logic.
-
-    // For now, I will Comment it out and strict refactor to Sidebar. 
-    // The functionality lost: 
-    // 1. Toast on SECRET_SHARED
-    // 2. Clearing active conversation on view switch.
-
-    // To keep functionality #2: passing 'setCurrentView' to Sidebar is fine, but clearing active conversation is a side effect.
-    // Ideally, DashboardSidebar should handle 'setActiveConversation(null)' when clicking other nav items? No, that's business logic.
-
-    // Let's rely on Messenger component essentially doing its own thing. 
-    // If I remove it, I must remove usage of `lastEvent` and `setActiveConversation`.
-
-    // Let's remove the `useMessenger` import at the top too? No, I will remove the hook call.
-
-
-    // Listen for Real-time Events
-    // React.useEffect(() => {
-    //     if (lastEvent && lastEvent.type === 'SECRET_SHARED') {
-    //         console.log("Real-time Update: Fetching Shared Secrets");
-    //         fetchSharedSecrets();
-    //         // Optional: Show toast
-    //         updateProgress(100, "New secret shared with you!");
-    //         setTimeout(() => updateProgress(0, ""), 3000);
-    //     }
-    // }, [lastEvent]);
-
-    // Clear active conversation when switching away from Messenger
-    // React.useEffect(() => {
-    //     if (currentView !== 'messenger') {
-    //        // setActiveConversation(null);
-    //     }
-    // }, [currentView]);
-
     const handleMultisigCreateSuccess = () => {
         setIsMultisigCreateOpen(false);
         fetchWorkflows();
     };
-
-    // Nav Items
-    const navItems = [
-        { id: 'secrets', label: 'Secrets', icon: <Lock className="w-4 h-4" /> },
-        { id: 'multisig', label: 'Multisig', icon: <FolderGit2 className="w-4 h-4" /> },
-    ];
 
     // Memoize the refresh handler to verify stability
     const handleRefreshSecrets = React.useCallback(() => {
@@ -240,8 +175,7 @@ export default function Dashboard() {
             <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
                 {/* Sidebar Navigation */}
                 <DashboardSidebar
-                    currentView={currentView}
-                    setCurrentView={setCurrentView}
+                    currentView={view}
                     secrets={secrets}
                     workflows={workflows}
                     sharedSecrets={sharedSecrets}
@@ -252,7 +186,7 @@ export default function Dashboard() {
 
                 {/* Main View Area */}
                 <div className="lg:col-span-3">
-                    {currentView === 'secrets' && (
+                    {view === 'secrets' && (
                         <>
                             <div className="flex justify-between items-center mb-6">
                                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Active Secrets</h2>
@@ -276,7 +210,7 @@ export default function Dashboard() {
                                 sharedSecrets={sharedSecrets}
                                 decryptedSecrets={decryptedSecrets}
                                 onDecrypt={handleDecrypt}
-                                onEdit={(s) => { /* Handle Edit logic or Modal */ alert("Edit not fully extracted yet, please verify standard flow"); }}
+                                onEdit={(s) => { alert("Edit not fully extracted yet, please verify standard flow"); }}
                                 onDelete={deleteSecret}
                                 onShare={openShareModal}
                                 onViewDetails={handleViewDetails}
@@ -287,7 +221,7 @@ export default function Dashboard() {
                         </>
                     )}
 
-                    {currentView === 'multisig' && (
+                    {view === 'multisig' && (
                         <>
                             <div className="flex justify-between items-center mb-6">
                                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Multisig Workflows</h2>
@@ -308,7 +242,7 @@ export default function Dashboard() {
                         </>
                     )}
 
-                    {currentView === 'messenger' && (
+                    {view === 'messenger' && (
                         <div className="h-[600px]">
                             <Messenger />
                         </div>
