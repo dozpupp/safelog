@@ -236,7 +236,13 @@ class GroupHistoryRequest(BaseModel):
     offset: int = Field(0, ge=0)
 
 class GroupMemberAdd(BaseModel):
-    user_address: str = Field(..., max_length=20000)
+    user_address: str
+
+class GroupMemberRoleUpdate(BaseModel):
+    role: str
+
+class GroupUpdate(BaseModel):
+    name: str = Field(..., max_length=20000)
 
 class Token(BaseModel):
     access_token: str

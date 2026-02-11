@@ -283,13 +283,36 @@ async def add_member(
     db.commit()
     db.refresh(new_member)
 
-    # Notify the new member
-    await manager.send_personal_message({
+    # Notify all members
+    event = {
         "type": "GROUP_MEMBER_ADDED",
         "channel_id": channel_id,
         "name": channel.name,
         "added_by": current_user.address,
-    }, new_addr)
+        "new_member": {
+            "user_address": new_member.user_address,
+            "role": new_member.role,
+            "username": target_user.username,
+            "joined_at": new_member.joined_at.isoformat(),
+            "encryption_public_key": target_user.encryption_public_key
+        }
+    }
+    
+    # Refresh channel to get updated member list inc case of race, but we know we just added one so:
+    # We can iterate existing members + new member
+    all_members = channel.members 
+    # Note: channel.members might not include the new one yet depending on session refresh, 
+    # but we did db.refresh(new_member) and it's associated with channel_id. 
+    # Better to just query members or append locally.
+    
+    # Safe way: rely on the fact channel.members is a relationship. 
+    # We might need to refresh channel or just iterate.
+    # Let's iterate channel.members (which might be stale) and add new_member.user_address
+    
+    recipients = {m.user_address for m in channel.members} | {new_addr}
+    
+    for addr in recipients:
+        await manager.send_personal_message(event, addr)
 
     return new_member
 
@@ -325,19 +348,62 @@ async def remove_member(
         raise HTTPException(status_code=404, detail="Member not found in group")
 
     # Permissions: owner can remove anyone, user can remove themselves (leave)
+    # Permissions: owner can remove anyone, user can remove themselves (leave)
     is_self = target_addr == current_user.address
     if not is_self and caller_member.role not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Only owners/admins can remove members")
 
-    # Owner cannot be removed (only by themselves = delete group)
-    if target_member.role == "owner" and not is_self:
-        raise HTTPException(status_code=403, detail="Cannot remove the group owner")
-
+    # Handle Owner removal
+    if target_member.role == "owner":
+        if is_self:
+            # Owner leaving -> Delete group (or transfer?)
+            # For now, delete group logic or just leave and group becomes ownerless/deleted.
+            # Usually strict owner leaving requires transfer. 
+            # But here we focus on Admin removing Owner.
+            pass 
+        else:
+            # Admin removing Owner
+            if caller_member.role != "admin":
+                 raise HTTPException(status_code=403, detail="Only admins can remove the owner")
+            
+            # Transfer ownership to caller
+            caller_member.role = "owner"
+            db.add(caller_member)
+            
+            # Notify about ownership change
+            event_owner = {
+                "type": "GROUP_MEMBER_UPDATED",
+                "channel_id": channel_id,
+                "member": {
+                    "user_address": caller_member.user_address,
+                    "role": "owner",
+                    "username": caller_member.user.username,
+                    "joined_at": caller_member.joined_at.isoformat()
+                }
+            }
+            # We will broadcast this below
+            
+            # Proceed to remove the old owner
+    
     db.delete(target_member)
     db.commit()
 
     # Notify remaining members
     remaining = [m.user_address for m in channel.members if m.user_address != target_addr]
+    
+    # If ownership changed, broadcast that first or with it
+    if target_member.role == "owner" and not is_self:
+         for addr in remaining:
+            await manager.send_personal_message(event_owner, addr)
+            # Also update channel owner_address in DB if we had it there?
+            # models.GroupChannel has owner_address. We should update it.
+    
+    # If we are transferring ownership, we MUST update channel.owner_address
+    if target_member.role == "owner" and not is_self:
+        channel.owner_address = caller_member.user_address
+        db.add(channel)
+        db.commit()
+
     event = {
         "type": "GROUP_MEMBER_REMOVED",
         "channel_id": channel_id,
@@ -352,6 +418,108 @@ async def remove_member(
         await manager.send_personal_message(event, target_addr)
 
     return {"status": "ok"}
+
+
+# ── Update Role ─────────────────────────────────────────────────
+
+@router.put("/{channel_id}/members/{member_address}/role", response_model=schemas.GroupMemberResponse)
+@limiter.limit("10/minute")
+async def update_member_role(
+    request: Request,
+    channel_id: str,
+    member_address: str,
+    data: schemas.GroupMemberRoleUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    channel = (
+        db.query(models.GroupChannel)
+        .options(joinedload(models.GroupChannel.members).joinedload(models.GroupMember.user))
+        .filter(models.GroupChannel.id == channel_id)
+        .first()
+    )
+    if not channel:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    caller_member = next((m for m in channel.members if m.user_address == current_user.address), None)
+    if not caller_member or caller_member.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the owner can manage roles")
+
+    target_addr = member_address.lower()
+    target_member = next((m for m in channel.members if m.user_address == target_addr), None)
+    if not target_member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    if target_member.role == "owner":
+        raise HTTPException(status_code=400, detail="Cannot change owner role directly")
+    
+    new_role = data.role.lower()
+    if new_role not in ("admin", "member"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    target_member.role = new_role
+    db.add(target_member)
+    db.commit()
+    db.refresh(target_member)
+
+    # Broadcast update
+    event = {
+        "type": "GROUP_MEMBER_UPDATED",
+        "channel_id": channel_id,
+        "member": {
+            "user_address": target_member.user_address,
+            "role": target_member.role,
+            "username": target_member.user.username,
+            "joined_at": target_member.joined_at.isoformat()
+        }
+    }
+    
+    for m in channel.members:
+        await manager.send_personal_message(event, m.user_address)
+
+    return target_member
+
+
+# ── Update Group (Rename) ──────────────────────────────────────
+
+@router.put("/{channel_id}", response_model=schemas.GroupChannelResponse)
+@limiter.limit("10/minute")
+async def update_group(
+    request: Request,
+    channel_id: str,
+    data: schemas.GroupUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    channel = (
+        db.query(models.GroupChannel)
+        .options(joinedload(models.GroupChannel.members).joinedload(models.GroupMember.user))
+        .filter(models.GroupChannel.id == channel_id)
+        .first()
+    )
+    if not channel:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    caller_member = next((m for m in channel.members if m.user_address == current_user.address), None)
+    if not caller_member or caller_member.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the owner can rename the group")
+
+    channel.name = data.name.strip()
+    db.add(channel)
+    db.commit()
+    db.refresh(channel)
+
+    # Broadcast update
+    event = {
+        "type": "GROUP_UPDATED",
+        "channel_id": channel_id,
+        "name": channel.name
+    }
+    
+    for m in channel.members:
+        await manager.send_personal_message(event, m.user_address)
+
+    return channel
 
 
 # ── Mark Read ───────────────────────────────────────────────────

@@ -33,6 +33,8 @@ export const API_ENDPOINTS = {
         HISTORY: (channelId) => `${API_BASE_URL}/groups/${channelId}/history`,
         MEMBERS: (channelId) => `${API_BASE_URL}/groups/${channelId}/members`,
         REMOVE_MEMBER: (channelId, addr) => `${API_BASE_URL}/groups/${channelId}/members/${addr}`,
+        UPDATE_ROLE: (channelId, addr) => `${API_BASE_URL}/groups/${channelId}/members/${addr}/role`,
+        DETAILS: (channelId) => `${API_BASE_URL}/groups/${channelId}`,
         MARK_READ: (channelId) => `${API_BASE_URL}/groups/${channelId}/mark-read`,
     }
 };

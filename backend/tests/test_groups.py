@@ -235,3 +235,81 @@ class TestGroupMembers:
             "user_address": u2["address"],
         }, headers=auth_header(token1))
         assert resp.status_code == 400
+
+
+class TestGroupAdmin:
+    def test_promote_member_to_admin(self, client, user1, user2):
+        token1, u1 = user1
+        _, u2 = user2
+
+        # Create group
+        create_resp = client.post("/groups", json={
+            "name": "Admin Test",
+            "member_addresses": [u1["address"], u2["address"]],
+        }, headers=auth_header(token1))
+        channel_id = create_resp.json()["id"]
+
+        # Promote user2 to admin
+        resp = client.put(f"/groups/{channel_id}/members/{u2['address']}/role", json={
+            "role": "admin"
+        }, headers=auth_header(token1))
+        assert resp.status_code == 200
+        assert resp.json()["role"] == "admin"
+
+        # Verify in group details
+        resp = client.get(f"/groups/{channel_id}", headers=auth_header(token1))
+        members = resp.json()["members"]
+        u2_role = next(m["role"] for m in members if m["user_address"] == u2["address"])
+        assert u2_role == "admin"
+
+    def test_admin_can_remove_owner_and_take_ownership(self, client, user1, user2):
+        token1, u1 = user1
+        token2, u2 = user2
+
+        # Create group
+        create_resp = client.post("/groups", json={
+            "name": "Coup Test",
+            "member_addresses": [u1["address"], u2["address"]],
+        }, headers=auth_header(token1))
+        channel_id = create_resp.json()["id"]
+
+        # Promote user2 to admin
+        client.put(f"/groups/{channel_id}/members/{u2['address']}/role", json={
+            "role": "admin"
+        }, headers=auth_header(token1))
+
+        # Admin (u2) removes Owner (u1)
+        resp = client.delete(f"/groups/{channel_id}/members/{u1['address']}", headers=auth_header(token2))
+        assert resp.status_code == 200
+
+        # Verify u2 is now owner
+        resp = client.get(f"/groups/{channel_id}", headers=auth_header(token2))
+        data = resp.json()
+        assert data["owner_address"] == u2["address"]
+        members = data["members"]
+        # u1 should be gone
+        assert not any(m["user_address"] == u1["address"] for m in members)
+        # u2 should be owner
+        u2_role = next(m["role"] for m in members if m["user_address"] == u2["address"])
+        assert u2_role == "owner"
+
+    def test_rename_group(self, client, user1, user2):
+        token1, u1 = user1
+        _, u2 = user2
+
+        create_resp = client.post("/groups", json={
+            "name": "Old Name",
+            "member_addresses": [u2["address"]],
+        }, headers=auth_header(token1))
+        assert create_resp.status_code == 200
+        channel_id = create_resp.json()["id"]
+
+        resp = client.put(f"/groups/{channel_id}", json={
+            "name": "New Name"
+        }, headers=auth_header(token1))
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "New Name"
+
+        # Verify get
+        resp = client.get(f"/groups/{channel_id}", headers=auth_header(token1))
+        assert resp.json()["name"] == "New Name"
