@@ -186,3 +186,17 @@ class GroupMessage(Base):
 
     channel = relationship("GroupChannel", back_populates="messages")
     sender = relationship("User")
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_address = Column(String, ForeignKey("users.address"), index=True)
+    endpoint = Column(Text, nullable=False)
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", back_populates="push_subscriptions")
+
+User.push_subscriptions = relationship("PushSubscription", back_populates="user", cascade="all, delete-orphan")

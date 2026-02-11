@@ -8,6 +8,7 @@ import models, schemas
 from database import get_db
 from dependencies import get_current_user
 from websocket_manager import manager
+from utils.push import notify_user_push
 
 router = APIRouter(
     prefix="/groups",
@@ -68,15 +69,22 @@ async def create_group(
     db.commit()
     db.refresh(channel)
 
-    # Notify all members via WebSocket
+    # Notify all members    # Real-time update
     for addr in member_addrs:
         if addr != current_user.address:
             await manager.send_personal_message({
-                "type": "GROUP_CREATED",
-                "channel_id": channel_id,
-                "name": channel.name,
-                "created_by": current_user.address,
+                "type": "GROUP_JOINED",
+                "channel": schemas.GroupChannelResponse.model_validate(channel)
             }, addr)
+            
+            # Push Notification
+            notify_user_push(
+                db,
+                addr,
+                title="New Group",
+                body=f"You have been added to a new group: {channel.name}",
+                data={"type": "group_joined", "channel_id": channel.id}
+            )
 
     return channel
 
@@ -190,19 +198,29 @@ async def send_group_message(
     db.commit()
     db.refresh(msg)
 
-    # Broadcast to all members
+    # Real-time update
+    import schemas
+    msg_json = schemas.GroupMessageResponse.model_validate(msg).model_dump(mode="json")
     msg_data = {
         "type": "NEW_GROUP_MESSAGE",
-        "message": {
-            "id": msg.id,
-            "channel_id": msg.channel_id,
-            "sender_address": msg.sender_address,
-            "content": msg.content,
-            "created_at": msg.created_at.isoformat(),
-        }
+        "message": msg_json
     }
+    
+    sender_name = current_user.username or f"{current_user.address[:8]}..."
+    
     for member in channel.members:
+        # WebSocket
         await manager.send_personal_message(msg_data, member.user_address)
+        
+        # Push Notification (Skip sender)
+        if member.user_address != current_user.address:
+            notify_user_push(
+                db,
+                member.user_address,
+                title=f"Group: {channel.name}",
+                body=f"{sender_name}: Sent a secure message",
+                data={"type": "group", "channel_id": channel.id}
+            )
 
     return msg
 

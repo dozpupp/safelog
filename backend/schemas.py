@@ -249,3 +249,16 @@ class Token(BaseModel):
     token_type: str
     user: UserResponse
 
+
+class PushSubscriptionCreate(BaseModel):
+    endpoint: str
+    p256dh: str
+    auth: str
+
+class PushSubscriptionResponse(PushSubscriptionCreate):
+    id: int
+    user_address: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+

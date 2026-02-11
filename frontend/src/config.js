@@ -36,6 +36,10 @@ export const API_ENDPOINTS = {
         UPDATE_ROLE: (channelId, addr) => `${API_BASE_URL}/groups/${channelId}/members/${addr}/role`,
         DETAILS: (channelId) => `${API_BASE_URL}/groups/${channelId}`,
         MARK_READ: (channelId) => `${API_BASE_URL}/groups/${channelId}/mark-read`,
+    },
+    NOTIFICATIONS: {
+        SUBSCRIBE: `${API_BASE_URL}/notifications/subscribe`,
+        UNSUBSCRIBE: `${API_BASE_URL}/notifications/unsubscribe`,
     }
 };
 

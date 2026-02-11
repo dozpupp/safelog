@@ -5,6 +5,7 @@ import { PQCProvider } from './context/PQCContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { MessengerProvider } from './context/MessengerContext';
+import { NotificationProvider } from './context/NotificationContext';
 
 // Lazy-loaded components
 const Login = React.lazy(() => import('./components/Login'));
@@ -53,7 +54,9 @@ function App() {
         <Web3Provider>
           <PQCProvider>
             <MessengerProvider>
-              <AppContent />
+              <NotificationProvider>
+                <AppContent />
+              </NotificationProvider>
             </MessengerProvider>
           </PQCProvider>
         </Web3Provider>

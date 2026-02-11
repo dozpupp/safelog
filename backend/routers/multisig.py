@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import models, schemas
 from database import get_db
 from dependencies import get_current_user
+from websocket_manager import manager
+from utils.push import notify_user_push
 
 router = APIRouter(
     prefix="/multisig",
@@ -83,6 +85,20 @@ def create_multisig_workflow(request: Request, workflow: schemas.MultisigWorkflo
 
     db.commit()
     db.refresh(new_workflow)
+    
+    # Notify Signers
+    sender_name = current_user.username or f"{current_user.address[:8]}..."
+    for signer_addr in workflow.signers:
+        s_addr = signer_addr.lower()
+        if s_addr != current_user.address:
+            notify_user_push(
+                db,
+                s_addr,
+                title="Signature Required",
+                body=f"{sender_name} requested your signature for: {new_workflow.name}",
+                data={"type": "multisig_request", "workflow_id": new_workflow.id}
+            )
+
     return new_workflow
 
 @router.get("/workflows", response_model=List[schemas.MultisigWorkflowResponse])
@@ -210,6 +226,18 @@ def sign_multisig_workflow(request: Request, workflow_id: int, sig_req: schemas.
 
     db.commit() # Commit this signature and keys first
     
+    sender_name = current_user.username or f"{current_user.address[:8]}..."
+    
+    # Notify Owner
+    if wf.owner_address != current_user.address:
+        notify_user_push(
+            db,
+            wf.owner_address,
+            title="Workflow Signed",
+            body=f"{sender_name} signed your workflow: {wf.name}",
+            data={"type": "multisig_signed", "workflow_id": wf.id}
+        )
+
     # Check if ALL have signed
     all_signers = db.query(models.MultisigWorkflowSigner).filter(models.MultisigWorkflowSigner.workflow_id == wf.id).all()
     all_signed = all(s.has_signed for s in all_signers)
@@ -218,6 +246,16 @@ def sign_multisig_workflow(request: Request, workflow_id: int, sig_req: schemas.
         wf.status = "completed"
         # Release handled above via Recipient Key updates in table
         db.commit()
+        
+        # Notify Recipients
+        for recipient in wf.recipients:
+            notify_user_push(
+                db,
+                recipient.user_address,
+                title="Secret Released",
+                body=f"Multisig workflow '{wf.name}' is complete. You now have access to the secret.",
+                data={"type": "multisig_completed", "workflow_id": wf.id}
+            )
     
     db.refresh(wf)
     return wf
