@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
@@ -16,9 +16,7 @@ class UserResponse(UserBase):
     encryption_public_key: Optional[str]
     created_at: datetime
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class SecretBase(BaseModel):
     name: str = Field(..., max_length=200)
@@ -40,9 +38,7 @@ class SecretResponse(SecretBase):
     encrypted_key: Optional[str] = None # The specific key for the requesting user (joined from AccessGrant)
     owner: UserResponse
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class FileChunkUpload(BaseModel):
     secret_id: int
@@ -55,9 +51,7 @@ class FileChunkResponse(BaseModel):
     iv: str
     encrypted_data: str
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class FileMetadata(BaseModel):
     """Stored in Secret.encrypted_data for chunked files instead of the full content."""
@@ -83,9 +77,7 @@ class AccessGrantResponse(BaseModel):
     secret: SecretResponse
     grantee: Optional[UserResponse]
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class DocumentBase(BaseModel):
     name: str = Field(..., max_length=200)
@@ -101,9 +93,7 @@ class DocumentResponse(DocumentBase):
     owner_address: str
     created_at: datetime
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class LoginRequest(BaseModel):
     address: str = Field(..., max_length=20000)
@@ -141,18 +131,14 @@ class MultisigWorkflowSignerResponse(BaseModel):
     encrypted_key: Optional[str]
     user: Optional[UserResponse]
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MultisigWorkflowRecipientResponse(BaseModel):
     user_address: str
     encrypted_key: Optional[str]
     user: Optional[UserResponse]
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MultisigWorkflowResponse(MultisigWorkflowBase):
     id: int
@@ -166,9 +152,7 @@ class MultisigWorkflowResponse(MultisigWorkflowBase):
     signers: List[MultisigWorkflowSignerResponse]
     recipients: List[MultisigWorkflowRecipientResponse]
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MultisigSignatureRequest(BaseModel):
     # 16MB limit
@@ -190,18 +174,14 @@ class MessageResponse(MessageBase):
     sender: Optional[UserResponse]
     recipient: Optional[UserResponse]
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ConversationResponse(BaseModel):
     user: UserResponse
     last_message: MessageResponse
     unread_count: int = 0
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class HistoryRequest(BaseModel):
     partner_address: str

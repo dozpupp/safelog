@@ -114,7 +114,7 @@ def list_multisig_workflows(current_user: models.User = Depends(get_current_user
         if not wf.secret:
             continue
             
-        val = schemas.MultisigWorkflowResponse.from_orm(wf)
+        val = schemas.MultisigWorkflowResponse.model_validate(wf)
         
         # If I am owner, fetch and attach key
         if wf.owner_address == current_user.address and wf.secret:
@@ -157,7 +157,7 @@ def get_multisig_workflow(workflow_id: int, current_user: models.User = Depends(
          raise HTTPException(status_code=403, detail="Not authorized")
 
     # Convert to Pydantic Response Model
-    wf_response = schemas.MultisigWorkflowResponse.from_orm(wf)
+    wf_response = schemas.MultisigWorkflowResponse.model_validate(wf)
 
     # Populate encrypted_key for the secret response if available
     if wf.secret:
