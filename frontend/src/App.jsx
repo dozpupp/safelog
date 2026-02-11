@@ -12,7 +12,7 @@ const Dashboard = React.lazy(() => import('./components/Dashboard'));
 const AuthBridge = React.lazy(() => import('./components/AuthBridge'));
 
 function AppContent() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, authType } = useAuth();
   const { isRetro, isCrashing } = useTheme();
 
   return (
@@ -29,7 +29,9 @@ function AppContent() {
             <>
               <Route path="/secrets" element={<Dashboard view="secrets" />} />
               <Route path="/multisig" element={<Dashboard view="multisig" />} />
-              <Route path="/messenger" element={<Dashboard view="messenger" />} />
+              {authType !== 'metamask' && (
+                <Route path="/messenger" element={<Dashboard view="messenger" />} />
+              )}
               <Route path="*" element={<Navigate to="/secrets" replace />} />
             </>
           ) : (

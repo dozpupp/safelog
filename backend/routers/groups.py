@@ -40,6 +40,14 @@ async def create_group(
     if missing:
         raise HTTPException(status_code=404, detail=f"Users not found: {', '.join(missing)}")
 
+    # Validate all members have PQC keys (Messenger requirement)
+    for u in users:
+        if not u.encryption_public_key or len(u.encryption_public_key) < 500:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"User {u.address} is not Messenger-capable (Missing PQC key)"
+            )
+
     channel_id = str(uuid.uuid4())
     channel = models.GroupChannel(
         id=channel_id,
@@ -266,10 +274,13 @@ async def add_member(
     if any(m.user_address == new_addr for m in channel.members):
         raise HTTPException(status_code=400, detail="User is already a member")
 
-    # Verify user exists
+    # Verify user exists and has PQC key
     target_user = db.query(models.User).filter(models.User.address == new_addr).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
+        
+    if not target_user.encryption_public_key or len(target_user.encryption_public_key) < 500:
+        raise HTTPException(status_code=400, detail="User is not Messenger-capable (Missing PQC key)")
 
     if len(channel.members) >= 50:
         raise HTTPException(status_code=400, detail="Maximum 50 members per group")

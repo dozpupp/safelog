@@ -19,11 +19,15 @@ router = APIRouter(
 async def send_message(request: Request, msg: schemas.MessageCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if len(msg.content) > 10000: # 10KB limit
         raise HTTPException(status_code=400, detail="Message too long")
-    # Verify recipient exists
+    # Verify recipient exists and has PQC key
     recipient_addr = msg.recipient_address.lower()
     recipient = db.query(models.User).filter(models.User.address == recipient_addr).first()
     if not recipient:
         raise HTTPException(status_code=404, detail="Recipient not found")
+    
+    # Validate PQC key for recipient (Messenger requires PQC for all participants)
+    if not recipient.encryption_public_key or len(recipient.encryption_public_key) < 500:
+        raise HTTPException(status_code=400, detail="Recipient is not Messenger-capable (Missing PQC key)")
     
     # Create message
     new_msg = models.Message(

@@ -2,6 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useMessenger } from '../hooks/useMessenger';
 import { Lock, FolderGit2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export default function DashboardSidebar({
     currentView,
@@ -14,6 +15,7 @@ export default function DashboardSidebar({
 }) {
     // Only this component will re-render when messenger events occur (typing, new message)
     const { unreadCount, lastEvent } = useMessenger();
+    const { authType } = useAuth();
 
     // Listen for Real-time Events safely within this isolated component
     const lastProcessedEventId = React.useRef(null);
@@ -73,22 +75,24 @@ export default function DashboardSidebar({
                         )}
                     </NavLink>
                 ))}
-                {/* Messenger Tab */}
-                <NavLink
-                    to="/messenger"
-                    className={({ isActive }) =>
-                        `${baseLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`
-                    }
-                >
-                    <div className="flex items-center gap-3">
-                        <span className="text-lg">💬</span> Messenger
-                    </div>
-                    {unreadCount > 0 && (
-                        <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                            {unreadCount}
-                        </span>
-                    )}
-                </NavLink>
+                {/* Messenger Tab - Only for TrustKeys/PQC users */}
+                {authType !== 'metamask' && (
+                    <NavLink
+                        to="/messenger"
+                        className={({ isActive }) =>
+                            `${baseLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`
+                        }
+                    >
+                        <div className="flex items-center gap-3">
+                            <span className="text-lg">💬</span> Messenger
+                        </div>
+                        {unreadCount > 0 && (
+                            <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                {unreadCount}
+                            </span>
+                        )}
+                    </NavLink>
+                )}
             </nav>
 
             {/* Quick Stats or Info */}

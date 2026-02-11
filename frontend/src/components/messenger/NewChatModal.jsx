@@ -12,7 +12,7 @@ const NewChatModal = ({ isOpen, onClose, onStartChat }) => {
     const searchUsers = async (query) => {
         setSearching(true);
         try {
-            const res = await fetch(`${API_ENDPOINTS.USERS.LIST}?search=${encodeURIComponent(query)}&limit=10`);
+            const res = await fetch(`${API_ENDPOINTS.USERS.LIST}?search=${encodeURIComponent(query)}&only_pqc=true&limit=10`);
             const data = await res.json();
             setSearchResults(data.filter(u => u.address !== user.address));
         } catch (e) {
