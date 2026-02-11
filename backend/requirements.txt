@@ -8,3 +8,4 @@ web3==6.15.1
 python-multipart==0.0.9
 httpx>=0.27
 slowapi==0.1.9
+alembic>=1.13

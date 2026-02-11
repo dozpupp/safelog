@@ -11,8 +11,15 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi import Request
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Run Alembic migrations on startup (safe for both fresh and existing DBs)
+try:
+    from alembic.config import Config
+    from alembic import command
+    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+    command.upgrade(alembic_cfg, "head")
+except Exception as e:
+    print(f"Alembic migration failed, falling back to create_all: {e}")
+    Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 app.state.limiter = limiter
