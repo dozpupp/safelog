@@ -131,8 +131,8 @@ def _reset_rate_limiter():
 @pytest.fixture(autouse=True)
 def _mock_pqc():
     """Globally mock out the PQC HTTP calls."""
-    with patch("requests.post", side_effect=_mock_requests_post), \
-         patch("requests.get", side_effect=_mock_requests_get), \
+    with patch("httpx.post", side_effect=_mock_requests_post), \
+         patch("httpx.get", side_effect=_mock_requests_get), \
          patch("auth._SERVER_PUBLIC_KEY", FAKE_SERVER_PUBLIC_KEY):
         yield
 
