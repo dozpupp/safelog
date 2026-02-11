@@ -443,7 +443,17 @@ export const MessengerProvider = ({ children }) => {
             });
             if (res.ok) {
                 const data = await res.json();
-                setGroupConversations(data);
+                setGroupConversations(prev => {
+                    const unreadMap = {};
+                    prev.forEach(g => {
+                        unreadMap[g.channel.id] = g.unread_count || 0;
+                    });
+
+                    return data.map(newGroup => ({
+                        ...newGroup,
+                        unread_count: unreadMap[newGroup.channel.id] || 0
+                    }));
+                });
             }
         } catch (e) { console.error("Fetch groups failed", e); }
     };
@@ -475,6 +485,11 @@ export const MessengerProvider = ({ children }) => {
     const loadGroupConversation = async (channel) => {
         setActiveGroupConversation({ channel, messages: [] });
         setMessagesLoading(true);
+
+        // Clear unread count locally
+        setGroupConversations(prev => prev.map(g =>
+            g.channel.id === channel.id ? { ...g, unread_count: 0 } : g
+        ));
 
         try {
             // Fetch full channel details with members
@@ -652,9 +667,20 @@ export const MessengerProvider = ({ children }) => {
                 fetchGroupConversations();
                 return prev;
             }
+
+            const isViewing = currentActive && currentActive.channel.id === channelId;
+
             return prev.map(g => {
                 if (g.channel.id !== channelId) return g;
-                return { ...g, last_message: msg };
+
+                let newUnread = g.unread_count || 0;
+                if (!isViewing && senderAddr !== myAddr) {
+                    newUnread += 1;
+                } else if (isViewing) {
+                    newUnread = 0;
+                }
+
+                return { ...g, last_message: msg, unread_count: newUnread };
             });
         });
     };
@@ -698,7 +724,8 @@ export const MessengerProvider = ({ children }) => {
             sendMessage,
             setActiveConversation,
             handleManualDecrypt,
-            unreadCount: conversations.reduce((acc, c) => acc + (c.unread_count || 0), 0),
+            unreadCount: conversations.reduce((acc, c) => acc + (c.unread_count || 0), 0) +
+                groupConversations.reduce((acc, g) => acc + (g.unread_count || 0), 0),
             lastEvent,
             // Group Channels
             groupConversations,

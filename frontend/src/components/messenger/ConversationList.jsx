@@ -143,6 +143,13 @@ const ConversationList = ({ conversations, activeConversation, onSelect, onNewCh
                                                 }`}>
                                                 <Users className="w-5 h-5" />
                                             </div>
+                                            {g.unread_count > 0 && (
+                                                <div className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center animate-in zoom-in">
+                                                    <span className="text-[10px] font-bold text-white leading-none">
+                                                        {g.unread_count > 9 ? '9+' : g.unread_count}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex-1 overflow-hidden">
                                             <div className="flex justify-between items-center mb-0.5">
