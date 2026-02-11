@@ -1,212 +1,363 @@
 # SafeLog
 
-A secure secret management and document signing application featuring **Quantum-Proof Security** via the TrustKeys extension.
+A secure secret management and document signing platform featuring **Post-Quantum Cryptography** via the TrustKeys browser extension.
+
+---
+
+## Architecture
+
+```
+safelog/
+├── backend/          Python FastAPI API + Node.js PQC sidecar
+├── frontend/         React 19 SPA (Vite + TailwindCSS 4)
+└── trustkeys/        Chrome/Brave extension (MV3, React 18)
+```
+
+The application runs **3 processes locally**: a FastAPI REST API, a Node.js PQC cryptography microservice, and a Vite dev server for the frontend.
+
+```
+┌─────────────────────────────┐
+│         Frontend            │
+│   React 19 + Vite + Router  │
+│   localhost:5173             │
+└──────────┬──────────────────┘
+           │ REST + WebSocket
+┌──────────▼──────────────────┐     ┌──────────────────────┐
+│       Backend API           │     │   PQC Microservice   │
+│   FastAPI + SQLAlchemy      ├────►│   Node.js            │
+│   localhost:8000            │HTTP │   localhost:3002      │
+└──────────┬──────────────────┘     └──────────────────────┘
+           │
+    ┌──────▼──────┐
+    │   SQLite    │
+    │ sql_app.db  │
+    └─────────────┘
+```
+
+---
 
 ## Features
 
-- 🔐 **Dual Authentication** - Login with **MetaMask** (Ethereum) or **TrustKeys** (Post-Quantum) using secure **Dilithium-Signed JWTs**.
-- 🧬 **Quantum-Proof Cryptography** - Integration with **Crystals-Kyber** (ML-KEM) and **Crystals-Dilithium** (ML-DSA).
-- 🛡️ **Hardened Secure Vault** - AES-256 + SHA-512 KDF (600k iterations) ensures locally stored keys are safe from quantum/brute-force attacks.
-- 📂 **File Vault** - Securely upload, encrypt, and share files (Images, PDFs, etc.).
-- 💣 **Timebomb Access** - Share secrets with self-destruct timers (Ephemeral Access).
-- ☁️ **MPC Recovery** - Backup your PQC identity using **Google ID** (Multi-Party Computation) without entrusting your full key to any single party.
-- 💾 **Hybrid Encryption** -  
-  - Standard Users: ECDH + AES (MetaMask).
-  - PQC Users: Kyber-768 Encapsulation + AES-GCM (TrustKeys).
-- 🤝 **Secure Sharing** - Share encrypted secrets between any user type (Eth ↔ PQC).
-- ✍️ **Signed Documents** - Create, share, and verify digitally signed documents (Sign-then-Encrypt) to prove authorship.
-- 📝 **Multisignature Workflows** - Create approval chains requiring multiple signatures (`M-of-N` or `N-of-N`) before secrets are cryptographically released to recipients.
-- 💬 **Encrypted Messenger** - End-to-End Encrypted (E2EE) messaging using a **Signal-Lite** architecture. Features **Session Key** management (AES-256-GCM), **Kyber-1024** key exchange, and **Dilithium-512** signatures, ensuring perfect forward secrecy and quantum resistance.
-- 👤 **User Profiles** - Manage usernames and view PQC identities.
+| Feature | Description |
+|---------|-------------|
+| **Dual Authentication** | MetaMask (Ethereum ECDSA) or TrustKeys (Dilithium-signed JWTs) |
+| **Post-Quantum Cryptography** | Crystals-Kyber (ML-KEM 768/1024) + Crystals-Dilithium (ML-DSA) |
+| **Secret Vault** | E2EE secrets with hybrid encryption (Kyber KEM + AES-GCM) |
+| **File Vault** | Chunked encrypted file upload/download (up to 50 MB) |
+| **Secure Sharing** | Re-wrap session keys for any recipient (Eth ↔ PQC cross-compatible) |
+| **Timebomb Access** | Share secrets with self-destruct timers (ephemeral grants) |
+| **Signed Documents** | Create, share, and verify digitally signed documents (sign-then-encrypt) |
+| **Multisig Workflows** | N-of-N signature collection with key release on completion |
+| **E2EE Messenger** | Signal-lite protocol: AES-256-GCM session keys, Kyber-1024 KEM, Dilithium-512 signatures |
+| **Hardened Local Vault** | AES-256-GCM + PBKDF2-SHA-512 (600k iterations) for browser-stored keys |
+| **MPC Recovery** | Backup PQC identity via Google ID (multi-party computation) |
+| **User Profiles** | Manage usernames and PQC identities |
 
-## 📝 Multisignature Workflows
+---
 
-Safelog implements a robust **Zero-Trust Multisignature** system designed for high-security approvals (e.g., launch codes, sensitive disclosures).
+## Prerequisites
 
-### Core Principles
-1.  **Release-on-Completion**: Recipients **cannot** access the content until **ALL** required signers have signed. The encryption keys for recipients are literally not generated until the final signature is applied.
-2.  **End-to-End Encryption**: The backend serves as a coordinator but **never** has access to the secret content or the keys.
-    *   **Creator** encrypts for Signers.
-    *   **Last Signer** encrypts for Recipients.
-3.  **Isolated Workflows**: Signers access requests via a dedicated "Workflows" interface, preventing clutter in their standard "Shared Secrets" vault.
-4.  **Attached Signatures**: Supports large post-quantum signatures (Dilithium) attached directly to the payload, ensuring the exact viewed content is what is cryptographically signed.
+| Tool | Version | Notes |
+|------|---------|-------|
+| **Python** | 3.10+ | Backend API |
+| **Node.js** | 22.x | PQC microservice + frontend build |
+| **npm** | 10.x | Comes with Node.js |
+| **Chrome / Brave** | Latest | Required for TrustKeys extension |
+| **MetaMask** | Optional | For standard Ethereum authentication |
 
-### The Flow
-1.  **Create**: A Creator defines a secret, selects **Signers**, and optionally **Recipients**.
-2.  **Sign**: Signers review the content and cryptographically sign it.
-3.  **Release**: When the **Last Signer** submits their signature, their client automatically generates and encrypts access keys for the Recipients.
-4.  **Access**: Only then does the workflow status flip to `COMPLETED`, allowing Recipients to decrypt and view the result.
+---
 
-## 💬 Secure Messenger Architecture
+## Installation
 
-Safelog's messenger implements a **Signal-Lite** protocol designed for Post-Quantum security, ensuring End-to-End Encryption (E2EE) and Perfect Forward Secrecy (PFS).
+### 1. Clone the repository
 
-### Protocol Overview
-The system uses a hybrid cryptographic approach combining **Post-Quantum KEM** (Key Encapsulation Mechanism) with standard high-performance symmetric encryption.
+```bash
+git clone https://github.com/yourusername/safelog.git
+cd safelog
+```
 
-1.  **Session Initiation**:
-    -   When Alice messages Bob, she generates a random **32-byte AES Session Key**.
-    -   Alice encapsulates this key using Bob's **Kyber-1024** Public Key (KEM).
-    -   She also encapsulates it for herself using her own Public Key (for message history synchronization).
+### 2. Backend setup
 
-2.  **Payload Encryption**:
-    -   The message content is encrypted using **AES-256-GCM** with the Session Key.
-    -   The encrypted package contains: `{ ciphertext, iv, wrapped_keys: { sender: blob, recip: blob } }`.
+```bash
+cd backend
 
-3.  **Authentication**:
-    -   Every message is signed using **Dilithium-512** (Post-Quantum Digital Signature) ensuring sender authenticity and non-repudiation.
+# Create and configure environment variables
+cp .env.example .env
+# IMPORTANT: Edit .env and set these values:
+#   SAFELOG_SECRET_KEY=<random-string>     ← Used to derive server PQC keys
+#   PQC_SHARED_SECRET=<random-string>     ← API key for PQC microservice auth
+```
 
-4.  **Batch Processing**:
-    -   To improve UX while maintaining security, the Vault (Local or TrustKeys Extension) supports **Batch Unwrapping**.
-    -   When opening a conversation with multiple session rotations, the vault unlocks once and decrypts all relevant session keys in parallel, preventing "password fatigue."
+#### Python dependencies
 
-## ⚠️ Security Notices
+```bash
+# Option A: Using the project's virtualenv (recommended)
+python3 -m venv ../.venv
+source ../.venv/bin/activate
+pip install -r requirements.txt
 
-> [!WARNING]
-> **Local Vault Usage (Extension-less Mode)**
-> When using the Local Vault, your PQC keys are encrypted and stored in your browser's `localStorage`.
-> - **Data Loss Risk**: Clearing your browser cache or site data **will permanently delete your keys**, resulting in total loss of account access.
-> - **Security Trade-off**: While keys are encrypted with your password, browser storage is generally less secure than a dedicated extension sandbox.
-> - **Recommendation**: **Regularly export your vault** (Manage Vault -> Export) and store the backup safely. Use the TrustKeys Extension for maximum security.
-> - **Encryption**: We use **AES-256-GCM** derived via **PBKDF2-SHA-512** (600,000 iterations) for maximum resistance against GPU/Quantum cracking.
+# Option B: Global install
+pip3 install -r requirements.txt
+```
+
+#### Node.js dependencies (for PQC microservice)
+
+```bash
+npm install
+```
+
+#### Database initialization
+
+The database is created automatically on first startup via Alembic migrations. No manual steps needed.
+
+If you prefer to initialize it explicitly:
+
+```bash
+# Apply all migrations (creates tables if DB doesn't exist)
+source ../.venv/bin/activate
+alembic upgrade head
+```
+
+### 3. Frontend setup
+
+```bash
+cd ../frontend
+
+# Configure environment
+cp .env.example .env
+# Default values work for local development:
+#   VITE_API_BASE_URL=http://localhost:8000
+
+# Install dependencies
+npm install
+```
+
+### 4. TrustKeys extension (optional — required for PQC features)
+
+```bash
+cd ../trustkeys
+npm install
+npm run build
+```
+
+Then load in Chrome/Brave:
+1. Navigate to `chrome://extensions`
+2. Enable **Developer Mode** (toggle in top right)
+3. Click **Load Unpacked** → select the `trustkeys/dist` folder
+
+---
+
+## Running the Application
+
+Safelog requires **3 terminal processes** running simultaneously.
+
+### Terminal 1 — PQC Microservice
+
+```bash
+cd backend
+node pqc_service.js
+```
+
+Expected output: `[PQC Service] Ready on http://127.0.0.1:3002`
+
+### Terminal 2 — Backend API
+
+```bash
+cd backend
+./run_dev.sh
+```
+
+Expected output: `Uvicorn running on http://127.0.0.1:8000`
+
+> **Note**: `run_dev.sh` loads `.env`, sets CORS origins, and starts uvicorn with hot-reload (excluding SQLite files to prevent crashes).
+
+### Terminal 3 — Frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+Expected output: `Local: http://localhost:5173/`
+
+### URL Routes
+
+| Route | Description |
+|-------|-------------|
+| `/` | Login page (redirects to `/secrets` when authenticated) |
+| `/secrets` | Secret vault (default authenticated view) |
+| `/multisig` | Multisig workflows |
+| `/messenger` | E2EE messenger |
+| `/auth-bridge` | TrustKeys extension auth bridge |
+
+---
+
+## Running Tests
+
+### Backend (pytest)
+
+```bash
+cd backend
+source ../.venv/bin/activate
+python3 -m pytest tests/ -v
+```
+
+Currently: **65 tests** covering auth, secrets, file chunks, messenger, multisig, and users.
+
+### Frontend (vitest)
+
+```bash
+cd frontend
+npx vitest run
+```
+
+Currently: **7 tests** covering App wiring and AuthContext behavior.
+
+---
+
+## Database Migrations (Alembic)
+
+Schema changes are managed with Alembic. The backend automatically runs `alembic upgrade head` on startup.
+
+### Creating a new migration
+
+After modifying `models.py`:
+
+```bash
+cd backend
+source ../.venv/bin/activate
+
+# Auto-generate migration from model diff
+alembic revision --autogenerate -m "describe your change"
+
+# Review the generated file in alembic/versions/
+# Then apply it
+alembic upgrade head
+```
+
+### Other useful commands
+
+```bash
+# Check current migration state
+alembic current
+
+# Show migration history
+alembic history
+
+# Downgrade one step
+alembic downgrade -1
+```
+
+---
+
+## Environment Variables
+
+### Backend (`backend/.env`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SAFELOG_SECRET_KEY` | **Yes** | – | Seed for deterministic server PQC key generation |
+| `PQC_SHARED_SECRET` | **Yes** | – | API key for authenticating PQC microservice requests |
+| `PQC_SERVICE_URL` | No | `http://127.0.0.1:3002` | URL of the PQC sidecar |
+| `ALLOWED_ORIGINS` | No | `http://localhost:5173` | Comma-separated CORS origins |
+| `GOOGLE_CLIENT_ID` | No | – | Google OAuth client ID (for MPC recovery, currently disabled) |
+
+### Frontend (`frontend/.env`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `VITE_API_BASE_URL` | No | `http://localhost:8000` | Backend API URL |
+| `ALLOWED_HOSTS` | No | – | Comma-separated Vite dev server allowed hosts |
+| `VITE_GOOGLE_CLIENT_ID` | No | – | Google OAuth client ID |
+
+---
 
 ## Tech Stack
 
-### Backend (`/backend`)
-- **FastAPI** - High-performance Python framework.
-- **SQLAlchemy + SQLite** - Robust data persistence.
-- **Node.js Bridge** - Interop layer for validating Dilithium signatures.
-- **PyJWT** - Secure session management.
+### Backend
 
-### Frontend (`/frontend`)
-- **React 19 + Vite** - Fast, modern UI.
-- **Context Architecture** - Separation of concerns (`AuthContext`, `Web3Context`, `PQCContext`).
-- **TailwindCSS** - Responsive dark-mode design.
+| Component | Technology |
+|-----------|------------|
+| Web framework | FastAPI ≥0.128 |
+| ORM | SQLAlchemy ≥2.0.46 |
+| Database | SQLite (via `sql_app.db`) |
+| Migrations | Alembic ≥1.13 |
+| HTTP client | httpx ≥0.27 |
+| Validation | Pydantic ≥2.12 |
+| ASGI server | uvicorn ≥0.40 |
+| Rate limiting | slowapi 0.1.9 |
+| JWT | PyJWT 2.10.1 |
+| PQC sidecar | Node.js + dilithium-crystals-js |
 
-### TrustKeys Extension (`/trustkeys`)
-- **Browser Extension** - Manages PQC keys securely.
-- **WASM Cryptography** - High-performance ML-KEM and ML-DSA implementation.
-- **Encrypted Vault** - AES-256-GCM protection for private keys.
-- **MPC Recovery** - Google-authenticated key reconstruction. (not active yet)
+### Frontend
 
-## Getting Started
- 
- ### Prerequisites
- - **Python 3.11+**
- - **Node.js 22.13.1**
- - **TrustKeys Extension** (Included in repo) for PQC features.
- - MetaMask (Optional, for standard features).
- 
- ### Installation & Setup
- 
- 1. **Clone the repository**
-    ```bash
-    git clone https://github.com/yourusername/safelog.git
-    cd safelog
-    ```
- 
- 2. **Setup Backend**
-    The backend consists of a Python FastAPI server and a Node.js microservice for PQC operations.
- 
-    ```bash
-    cd backend
-    
-    # 1. Environment Setup
-    cp .env.example .env
-    # CRITICAL: Edit .env and set a random SAFELOG_SECRET_KEY
-    # The application will fail to start if this key is missing.
-    # ALSO: Ensure PQC_SHARED_SECRET is set (check .env.example) to secure backend<->service communication.
-    
-    # 2. Install Python Dependencies
-    pip3 install -r requirements.txt
-    
-    # 3. Install Node.js Dependencies (for PQC Service)
-    npm install
-    
-    # 4. Initialize Database
-    python3 create_database.py
-    ```
- 
- 3. **Setup Frontend**
-    ```bash
-    cd frontend
-    cp .env.example .env
-    npm install
-    ```
- 
- 4. **Install TrustKeys Extension**
-    - Navigate to `safelog/trustkeys`.
-    - Install dependencies and build:
-      ```bash
-      cd trustkeys
-      npm install
-      npm run build
-      ```
-    - Open Chrome/Brave to `chrome://extensions`.
-    - Enable **Developer Mode** (toggle in top right).
-    - Click **Load Unpacked** and select the `safelog/trustkeys/dist` folder.
-    - Note the Extension ID (you might need it for specific configurations), but generally, it works out of the box for local dev.
- 
- ---
- 
- ## 🏃‍♂️ Running the Application
- 
- Safelog requires **3 separate terminal processes** to run locally.
- 
- ### Terminal 1: PQC Microservice
- *This service handles the heavy lifting for Post-Quantum Cryptography (Dilithium/Kyber).*
- 
- ```bash
- cd backend
- # Ensure the .env file has SAFELOG_SECRET_KEY set!
- node pqc_service.js
- ```
- *Expected Output:* `[PQC Service] Ready on http://127.0.0.1:3002`
- 
- ### Terminal 2: Backend API
- *The main FastAPI server.*
- 
- ```bash
- cd backend
- ./run_dev.sh
- ```
- *Expected Output:* `Uvicorn running on http://127.0.0.1:8000`
- 
- ### Terminal 3: Frontend
- *The React application.*
- 
- ```bash
- cd frontend
- npm run dev
- ```
- *Expected Output:* `Local: http://localhost:5173/`
- 
- ---
- 
- ## 🛠️ Configuration & Security Notes
- 
- ### Environment Variables
- - **backend/.env**:
-   - `SAFELOG_SECRET_KEY`: **Mandatory**. Used to deterministically generate server PQC keys.
-   - `PQC_SHARED_SECRET`: **Mandatory**. Shared secret / API Key for authenticating the PQC Microservice.
-   - `PQC_SERVICE_URL`: **Optional**. URL of the PQC Microservice (default: `http://127.0.0.1:3002`).
-   - `ALLOWED_ORIGINS`: CORS settings (default includes localhost).
-   - `GOOGLE_CLIENT_ID`: (Disabled) Previously used for MPC Recovery.
- 
- ### Disabled Features
- - **Google MPC Recovery**: The "Restore from Google" functionality is currently **disabled** in the code to prevent security risks associated with unstable Extension IDs in development mode.
- 
- ### Nginx / Production Notes
- Post-Quantum Cryptography signatures (Dilithium2) are significantly larger (~2-3KB) than standard signatures.
- **You must increase the buffer size in your Nginx configuration** to avoid `431 Request Header Fields Too Large` errors when passing JWTs.
- 
- ```nginx
- http {
+| Component | Technology |
+|-----------|------------|
+| UI framework | React 19 |
+| Bundler | Vite 7 |
+| Routing | react-router-dom 7 |
+| Styling | TailwindCSS 4 |
+| Icons | lucide-react |
+| PQC crypto | crystals-kyber, dilithium-crystals-js |
+| Ethereum | ethers 6, @metamask/eth-sig-util |
+
+### TrustKeys Extension
+
+| Component | Technology |
+|-----------|------------|
+| UI | React 18, Manifest V3 |
+| Build | Vite + @crxjs/vite-plugin |
+| PQC | crystals-kyber, dilithium-crystals-js |
+| Vault | AES-256-GCM encrypted storage |
+
+---
+
+## Production Deployment Notes
+
+### Nginx configuration
+
+PQC signatures (Dilithium) are significantly larger than standard signatures (~2-3 KB). You **must** increase Nginx buffer sizes:
+
+```nginx
+http {
     client_header_buffer_size 4k;
     large_client_header_buffers 4 16k;
-    client_max_body_size 64M; # Increased to support large attached PQC signatures
- }
- ```
+    client_max_body_size 64M;
+}
+```
+
+### SPA routing
+
+For production serving with Nginx, add a fallback to `index.html` for client-side routing:
+
+```nginx
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+### Building for production
+
+```bash
+cd frontend
+npm run build
+# Output in dist/ — serve with Nginx or any static file server
+```
+
+---
+
+## Security Notices
+
+> **⚠️ Local Vault (Extension-less Mode)**
+>
+> When using the Local Vault without the TrustKeys extension:
+> - Your PQC keys are encrypted and stored in browser `localStorage`
+> - **Clearing browser data will permanently delete your keys**
+> - Keys are protected with AES-256-GCM via PBKDF2-SHA-512 (600,000 iterations)
+> - **Always export your vault regularly** (Manage Vault → Export)
+> - For maximum security, use the TrustKeys Extension
+
+---
 
 ## License
 

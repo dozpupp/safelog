@@ -53,15 +53,28 @@ const SecretItem = ({ secret, decryptedContent, onDecrypt, onEdit, onDelete, onS
         try {
             const fileData = JSON.parse(jsonContent);
             if (fileData.type !== 'file') return;
+
             const link = document.createElement('a');
-            link.href = fileData.content;
             link.download = fileData.name;
+
+            if (fileData.content) {
+                // Content is always a blob: URL now (handled by useSecrets)
+                link.href = fileData.content;
+            }
+
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
         } catch (e) {
             console.error("Download failed", e);
         }
+    };
+
+    const formatFileSize = (bytes) => {
+        if (!bytes) return '';
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
     // Render Logic
@@ -91,13 +104,25 @@ const SecretItem = ({ secret, decryptedContent, onDecrypt, onEdit, onDelete, onS
             if (parsed && parsed.type === 'file' && parsed.content) {
                 isFile = true;
                 fileData = parsed;
+
+                const isImage = parsed.mime && parsed.mime.startsWith('image/');
+
                 innerDisplay = (
                     <div className="flex flex-col gap-2">
                         <div className="flex items-center gap-2 text-indigo-300">
                             <FileText className="w-4 h-4" />
                             <span className="font-medium">{parsed.name}</span>
-                            <span className="text-xs text-slate-500">({parsed.mime})</span>
+                            <span className="text-xs text-slate-500">
+                                ({parsed.mime}{parsed.size ? ` · ${formatFileSize(parsed.size)}` : ''})
+                            </span>
                         </div>
+                        {isImage && (
+                            <img
+                                src={parsed.content}
+                                alt={parsed.name}
+                                className="max-w-xs max-h-48 rounded-lg border border-slate-700 object-contain"
+                            />
+                        )}
                         <button
                             onClick={() => handleDownload(content)}
                             className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm w-fit transition-colors"

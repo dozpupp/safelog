@@ -15,7 +15,7 @@ const CreateSecret = ({ onCreate, onCancel }) => {
     const [isSigned, setIsSigned] = useState(false);
     const [creating, setCreating] = useState(false);
 
-    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (chunked upload supports larger files)
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -39,25 +39,24 @@ const CreateSecret = ({ onCreate, onCancel }) => {
                 return;
             }
 
-            let rawContent = content;
             if (contentType === 'file') {
                 if (selectedFile.size > MAX_FILE_SIZE) {
-                    alert("File too large (Max 5MB).");
+                    alert("File too large (Max 50MB).");
                     setCreating(false);
                     return;
                 }
-                const base64 = await readFileAsBase64(selectedFile);
-                rawContent = JSON.stringify({
-                    type: 'file',
-                    name: selectedFile.name,
-                    mime: selectedFile.type,
-                    content: base64
-                });
+                // Pass file object directly — useSecrets handles chunked upload
+                await onCreate(
+                    name,
+                    isSigned ? 'signed_document' : 'file',
+                    '', // rawContent not used for chunked files
+                    isSigned,
+                    selectedFile // File object for chunked upload
+                );
+            } else {
+                await onCreate(name, isSigned ? 'signed_document' : 'standard', content, isSigned);
             }
 
-            await onCreate(name, isSigned ? 'signed_document' : (contentType === 'file' ? 'file' : 'standard'), rawContent, isSigned);
-            // Reset happens in parent or here? 
-            // Parent closes form usually.
             onCancel();
         } catch (error) {
             console.error(error);
@@ -160,7 +159,7 @@ const CreateSecret = ({ onCreate, onCancel }) => {
                                         </label>
                                         <p className="pl-1">or drag and drop</p>
                                     </div>
-                                    <p className="text-xs text-slate-400 mt-2">Up to 5MB</p>
+                                    <p className="text-xs text-slate-400 mt-2">Up to 50MB (Chunked Upload)</p>
                                 </>
                             )}
                         </div>
@@ -173,8 +172,8 @@ const CreateSecret = ({ onCreate, onCancel }) => {
                             type="button"
                             onClick={() => setIsSigned(!isSigned)}
                             className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${isSigned
-                                    ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400'
-                                    : 'bg-transparent border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400'
+                                : 'bg-transparent border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                                 }`}
                         >
                             <Shield className={`w-4 h-4 ${isSigned ? 'fill-current' : ''}`} />

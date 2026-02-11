@@ -4,7 +4,7 @@ from web3 import Web3
 import secrets
 import base64
 import json
-import requests
+import httpx
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -19,7 +19,7 @@ def get_server_public_key():
     try:
         secret = os.getenv("PQC_SHARED_SECRET")
         headers = {"x-api-key": secret} if secret else {}
-        res = requests.get(f"{PQC_SERVICE_URL}/server-public-key", headers=headers, timeout=2)
+        res = httpx.get(f"{PQC_SERVICE_URL}/server-public-key", headers=headers, timeout=2)
         if res.status_code == 200:
             _SERVER_PUBLIC_KEY = res.json().get("publicKey")
             return _SERVER_PUBLIC_KEY
@@ -46,7 +46,7 @@ def verify_pqc_signature(public_key: str, nonce: str, signature: str) -> bool:
         
         # Call Node.js sidecar service
         try:
-            response = requests.post(
+            response = httpx.post(
                 f"{PQC_SERVICE_URL}/verify",
                 json={
                     "message": message_text,
@@ -64,7 +64,7 @@ def verify_pqc_signature(public_key: str, nonce: str, signature: str) -> bool:
             result = response.json()
             return result.get("valid", False)
             
-        except requests.exceptions.ConnectionError:
+        except httpx.ConnectError:
             print("CRITICAL ERROR: PQC Service Unavailable. Is 'node backend/pqc_service.js' running?")
             return False
             
@@ -108,7 +108,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     try:
         secret = os.getenv("PQC_SHARED_SECRET")
         headers = {"x-api-key": secret}
-        res = requests.post(f"{PQC_SERVICE_URL}/sign", json={"message": message}, headers=headers, timeout=5)
+        res = httpx.post(f"{PQC_SERVICE_URL}/sign", json={"message": message}, headers=headers, timeout=5)
         if res.status_code != 200:
             raise Exception(f"Signing failed: {res.text}")
         
@@ -141,7 +141,7 @@ def decode_access_token(token: str):
             return None
             
         # 3. Verify via PQC Service (Using the message as the data signed)
-        res = requests.post(
+        res = httpx.post(
             f"{PQC_SERVICE_URL}/verify",
             json={
                 "message": message,
