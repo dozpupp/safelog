@@ -12,6 +12,11 @@ from unittest.mock import patch, MagicMock
 # Ensure backend root is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+# Fake VAPID keys for testing
+os.environ["VAPID_PUBLIC_KEY"] = "fake_pub"
+os.environ["VAPID_PRIVATE_KEY"] = "fake_priv"
+os.environ["VAPID_SUBJECT"] = "mailto:test@test.com"
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker

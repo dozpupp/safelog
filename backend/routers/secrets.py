@@ -7,6 +7,7 @@ import models, schemas
 from database import get_db
 from dependencies import get_current_user
 from websocket_manager import manager
+from utils.push import notify_user_push
 import config
 
 router = APIRouter(tags=["secrets"]) # Secrets and Documents mixed? Or should I separate? Plan said secrets.py
@@ -136,6 +137,16 @@ async def share_secret(request: Request, grant: schemas.AccessGrantCreate, curre
             "grant_id": new_grant.id
         }
     }, grant.grantee_address.lower())
+
+    # Push Notification
+    sender_name = current_user.username or f"{current_user.address[:8]}..."
+    notify_user_push(
+        db,
+        grant.grantee_address.lower(),
+        title="Secret Shared",
+        body=f"{sender_name} shared a secure secret with you: {secret.name}",
+        data={"type": "secret_shared", "secret_id": secret.id}
+    )
 
     return new_grant
 

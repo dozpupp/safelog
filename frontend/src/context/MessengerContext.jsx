@@ -32,6 +32,12 @@ export const MessengerProvider = ({ children }) => {
     const [messagesLoading, setMessagesLoading] = useState(false);
     const [sending, setSending] = useState(false);
 
+    // ── Group Channels State ───────────────────────────────────────
+    const [groupConversations, setGroupConversations] = useState([]);
+    const [activeGroupConversation, setActiveGroupConversation] = useState(null);
+    const activeGroupConversationRef = useRef(null);
+    useEffect(() => { activeGroupConversationRef.current = activeGroupConversation; }, [activeGroupConversation]);
+
     // Event Listeners (e.g. for Dashboard to refresh secrets)
     const [lastEvent, setLastEvent] = useState(null);
 
@@ -77,6 +83,99 @@ export const MessengerProvider = ({ children }) => {
                     const data = JSON.parse(event.data);
                     if (data.type === 'NEW_MESSAGE') {
                         await handleIncomingMessage(data.message);
+                    } else if (data.type === 'NEW_GROUP_MESSAGE') {
+                        await handleIncomingGroupMessage(data.message);
+                    } else if (data.type === 'GROUP_CREATED') {
+                        fetchGroupConversations();
+                    } else if (data.type === 'GROUP_MEMBER_ADDED') {
+                        fetchGroupConversations();
+                        // Force session rotation for this group
+                        setActiveSessionIds(prev => {
+                            const updated = { ...prev };
+                            delete updated[`group_${data.channel_id}`];
+                            return updated;
+                        });
+
+                        const currentActive = activeGroupConversationRef.current;
+                        if (currentActive && currentActive.channel.id === data.channel_id) {
+                            if (data.new_member) {
+                                setActiveGroupConversation(prev => {
+                                    if (!prev || prev.channel.id !== data.channel_id) return prev;
+                                    if (prev.channel.members.some(m => m.user_address === data.new_member.user_address)) return prev;
+                                    const newMember = {
+                                        ...data.new_member,
+                                        user: {
+                                            address: data.new_member.user_address,
+                                            username: data.new_member.username,
+                                            encryption_public_key: data.new_member.encryption_public_key
+                                        }
+                                    };
+                                    return {
+                                        ...prev,
+                                        channel: { ...prev.channel, members: [...prev.channel.members, newMember] }
+                                    };
+                                });
+                            }
+                        }
+                    } else if (data.type === 'GROUP_MEMBER_UPDATED') {
+                        fetchGroupConversations();
+                        const currentActive = activeGroupConversationRef.current;
+                        if (currentActive && currentActive.channel.id === data.channel_id) {
+                            setActiveGroupConversation(prev => {
+                                if (!prev || prev.channel.id !== data.channel_id) return prev;
+                                return {
+                                    ...prev,
+                                    channel: {
+                                        ...prev.channel,
+                                        members: prev.channel.members.map(m =>
+                                            m.user_address === data.member.user_address
+                                                ? { ...m, role: data.member.role } // Update role
+                                                : m
+                                        ),
+                                        // If ownership changed, we might need to update owner_address on channel too
+                                        owner_address: data.member.role === 'owner' ? data.member.user_address : prev.channel.owner_address
+                                    }
+                                };
+                            });
+                        }
+                    } else if (data.type === 'GROUP_UPDATED') {
+                        fetchGroupConversations(); // Updates list name
+                        const currentActive = activeGroupConversationRef.current;
+                        if (currentActive && currentActive.channel.id === data.channel_id) {
+                            setActiveGroupConversation(prev => ({
+                                ...prev,
+                                channel: { ...prev.channel, name: data.name }
+                            }));
+                        }
+                    } else if (data.type === 'GROUP_MEMBER_REMOVED') {
+                        if (data.removed_address === user.address.toLowerCase()) {
+                            // We were removed — remove from list and clear active if it's this one
+                            setGroupConversations(prev => prev.filter(g => g.channel.id !== data.channel_id));
+                            const currentActive = activeGroupConversationRef.current;
+                            if (currentActive && currentActive.channel.id === data.channel_id) {
+                                setActiveGroupConversation(null);
+                            }
+                        } else {
+                            fetchGroupConversations();
+                            // Force session rotation for this group
+                            setActiveSessionIds(prev => {
+                                const updated = { ...prev };
+                                delete updated[`group_${data.channel_id}`];
+                                return updated;
+                            });
+
+                            // Update active chat members if viewing
+                            const currentActive = activeGroupConversationRef.current;
+                            if (currentActive && currentActive.channel.id === data.channel_id) {
+                                setActiveGroupConversation(prev => ({
+                                    ...prev,
+                                    channel: {
+                                        ...prev.channel,
+                                        members: prev.channel.members.filter(m => m.user_address !== data.removed_address)
+                                    }
+                                }));
+                            }
+                        }
                     } else if (data.type === 'SECRET_SHARED') {
                         console.log("WS Event: SECRET_SHARED");
                         setLastEvent({ type: 'SECRET_SHARED', timestamp: Date.now(), data: data });
@@ -122,7 +221,10 @@ export const MessengerProvider = ({ children }) => {
 
     // Initial Load
     useEffect(() => {
-        if (token) fetchConversations();
+        if (token) {
+            fetchConversations();
+            fetchGroupConversations();
+        }
     }, [token]);
 
     const handleIncomingMessage = async (msg) => {
@@ -414,6 +516,385 @@ export const MessengerProvider = ({ children }) => {
         } catch (e) { console.error("Manual decrypt failed", e); }
     };
 
+    // ── Group Channel Functions ─────────────────────────────────────
+
+    const fetchGroupConversations = async () => {
+        try {
+            const res = await fetch(`${API_ENDPOINTS.GROUPS.LIST}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setGroupConversations(prev => {
+                    const unreadMap = {};
+                    prev.forEach(g => {
+                        unreadMap[g.channel.id] = g.unread_count || 0;
+                    });
+
+                    return data.map(newGroup => ({
+                        ...newGroup,
+                        unread_count: unreadMap[newGroup.channel.id] || 0
+                    }));
+                });
+            }
+        } catch (e) { console.error("Fetch groups failed", e); }
+    };
+
+    const createGroup = async (name, memberAddresses) => {
+        try {
+            const res = await fetch(`${API_ENDPOINTS.GROUPS.CREATE}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ name, member_addresses: memberAddresses })
+            });
+            if (res.ok) {
+                const channel = await res.json();
+                fetchGroupConversations();
+                return channel;
+            } else {
+                const err = await res.json();
+                throw new Error(err.detail || 'Failed to create group');
+            }
+        } catch (e) {
+            console.error(e);
+            throw e;
+        }
+    };
+
+    const addGroupMember = async (channelId, userAddress) => {
+        try {
+            const res = await fetch(`${API_ENDPOINTS.GROUPS.MEMBERS(channelId)}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ user_address: userAddress })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Failed to add member');
+            }
+            // Force session rotation for this group
+            setActiveSessionIds(prev => {
+                const updated = { ...prev };
+                delete updated[`group_${channelId}`];
+                return updated;
+            });
+            // Refresh logic handled by WS usually, but we can optimistically fetch too
+            return await res.json();
+        } catch (e) {
+            console.error(e);
+            throw e;
+        }
+    };
+
+    const removeGroupMember = async (channelId, userAddress) => {
+        try {
+            const res = await fetch(`${API_ENDPOINTS.GROUPS.REMOVE_MEMBER(channelId, userAddress)}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Failed to remove member');
+            }
+            // Force session rotation for this group
+            setActiveSessionIds(prev => {
+                const updated = { ...prev };
+                delete updated[`group_${channelId}`];
+                return updated;
+            });
+        } catch (e) {
+            console.error(e);
+            throw e;
+        }
+    };
+
+    const updateGroupMemberRole = async (channelId, userAddress, role) => {
+        try {
+            const res = await fetch(`${API_ENDPOINTS.GROUPS.UPDATE_ROLE(channelId, userAddress)}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ role })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Failed to update role');
+            }
+            return await res.json();
+        } catch (e) {
+            console.error(e);
+            throw e;
+        }
+    };
+
+    const updateGroup = async (channelId, data) => {
+        try {
+            const res = await fetch(`${API_ENDPOINTS.GROUPS.DETAILS(channelId)}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(data)
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Failed to update group');
+            }
+            return await res.json();
+        } catch (e) {
+            console.error(e);
+            throw e;
+        }
+    };
+
+    const loadGroupConversation = async (channel) => {
+        setActiveGroupConversation({ channel, messages: [] });
+        setMessagesLoading(true);
+
+        // Clear unread count locally
+        setGroupConversations(prev => prev.map(g =>
+            g.channel.id === channel.id ? { ...g, unread_count: 0 } : g
+        ));
+
+        try {
+            // Fetch full channel details with members
+            const chanRes = await fetch(`${API_ENDPOINTS.GROUPS.GET(channel.id)}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            let fullChannel = channel;
+            if (chanRes.ok) fullChannel = await chanRes.json();
+
+            const res = await fetch(`${API_ENDPOINTS.GROUPS.HISTORY(channel.id)}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ limit: 50, offset: 0 })
+            });
+
+            if (res.ok) {
+                const rawMsgs = await res.json();
+                const processed = await processGroupMessages(rawMsgs);
+                setActiveGroupConversation({ channel: fullChannel, messages: processed });
+            }
+        } catch (e) { console.error(e); }
+        finally { setMessagesLoading(false); }
+    };
+
+    const processGroupMessages = async (rawMsgs) => {
+        const myAddr = user.address.toLowerCase();
+
+        // 1. Try local cache
+        const initialProcessed = await Promise.all(rawMsgs.map(async msg => {
+            try {
+                const payload = JSON.parse(msg.content);
+                if (payload.v === 2 && payload.sid) {
+                    // Filter out messages that don't have a key for us
+                    if (!payload.keys || !payload.keys[myAddr]) return null;
+
+                    if (sessionKeysRef.current[payload.sid]) {
+                        const pt = await decryptWithSessionKey(payload.ct, sessionKeysRef.current[payload.sid]);
+                        return { ...msg, plainText: pt };
+                    }
+                    return { ...msg, _sessionPayload: payload };
+                }
+            } catch (e) { }
+            return { ...msg, plainText: null };
+        }));
+
+        const processed = initialProcessed.filter(m => m !== null);
+
+        // 2. Batch unwrap missing keys
+        const keysToUnwrap = {};
+        for (const m of processed) {
+            if (m._sessionPayload && !sessionKeysRef.current[m._sessionPayload.sid]) {
+                const p = m._sessionPayload;
+                if (p.keys && p.keys[myAddr]) {
+                    keysToUnwrap[p.sid] = p.keys[myAddr];
+                }
+            }
+        }
+
+        const sids = Object.keys(keysToUnwrap);
+        if (sids.length > 0) {
+            const blobs = sids.map(sid => keysToUnwrap[sid]);
+            try {
+                const unwrappedList = await unwrapManySessionKeys(blobs);
+                const newKeys = { ...sessionKeysRef.current };
+                sids.forEach((sid, idx) => {
+                    const k = unwrappedList[idx];
+                    if (k) newKeys[sid] = k;
+                });
+                setSessionKeys(newKeys);
+
+                return await Promise.all(processed.map(async m => {
+                    if (m._sessionPayload && newKeys[m._sessionPayload.sid]) {
+                        try {
+                            const pt = await decryptWithSessionKey(m._sessionPayload.ct, newKeys[m._sessionPayload.sid]);
+                            return { ...m, plainText: pt };
+                        } catch (e) { }
+                    }
+                    return m;
+                }));
+            } catch (e) { console.error("Group batch unwrap failed", e); }
+        }
+
+        return processed;
+    };
+
+    const sendGroupMessage = async (text, channel) => {
+        setSending(true);
+        try {
+            const members = channel.members || [];
+            const channelId = channel.id;
+
+            // Session Logic (per-channel)
+            let sid = activeSessionIds[`group_${channelId}`];
+            let sKey = sid ? sessionKeys[sid] : null;
+            let keyPayload = null;
+
+            if (!sKey) {
+                sid = crypto.randomUUID();
+                sKey = await generateSessionKey();
+
+                // Wrap for every member that has a public key
+                const wrappedKeys = {};
+                for (const member of members) {
+                    const pubKey = member.user?.encryption_public_key;
+                    if (pubKey) {
+                        wrappedKeys[member.user_address] = await wrapSessionKey(sKey, pubKey);
+                    }
+                }
+
+                keyPayload = wrappedKeys;
+                setSessionKeys(prev => ({ ...prev, [sid]: sKey }));
+                setActiveSessionIds(prev => ({ ...prev, [`group_${channelId}`]: sid }));
+            }
+
+            const ct = await encryptWithSessionKey(text, sKey);
+            const payload = { v: 2, sid, gid: channelId, keys: keyPayload, ct };
+
+            const res = await fetch(`${API_ENDPOINTS.GROUPS.MESSAGES(channelId)}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ content: JSON.stringify(payload) })
+            });
+
+            if (res.ok) {
+                const newMsg = await res.json();
+                const uiMsg = { ...newMsg, plainText: text };
+                setActiveGroupConversation(prev => {
+                    if (!prev || prev.messages.some(m => m.id === newMsg.id)) return prev;
+                    return { ...prev, messages: [...prev.messages, uiMsg] };
+                });
+                fetchGroupConversations();
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Send failed: " + e.message);
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const handleIncomingGroupMessage = async (msg) => {
+        const senderAddr = msg.sender_address.toLowerCase();
+        const myAddr = user.address.toLowerCase();
+        const channelId = msg.channel_id;
+
+        let plainText = null;
+        try {
+            const payload = JSON.parse(msg.content);
+            if (payload.v === 2 && payload.sid) {
+                // Filter out messages that don't have a key for us
+                if (!payload.keys || !payload.keys[myAddr]) return;
+
+                const key = sessionKeysRef.current[payload.sid];
+                if (key) {
+                    plainText = await decryptWithSessionKey(payload.ct, key);
+                }
+            }
+        } catch (e) { }
+
+        const decryptedMsg = { ...msg, plainText };
+
+        // Update active group chat if open
+        const currentActive = activeGroupConversationRef.current;
+        if (currentActive && currentActive.channel.id === channelId) {
+            setActiveGroupConversation(prev => {
+                if (!prev || prev.channel.id !== channelId) return prev;
+                const exists = prev.messages.find(m => m.id === msg.id);
+                if (exists) return prev;
+                return { ...prev, messages: [...prev.messages, decryptedMsg] };
+            });
+        }
+
+        // Update group conversations list
+        setGroupConversations(prev => {
+            const existing = prev.find(g => g.channel.id === channelId);
+            if (!existing) {
+                fetchGroupConversations();
+                return prev;
+            }
+
+            const isViewing = currentActive && currentActive.channel.id === channelId;
+
+            return prev.map(g => {
+                if (g.channel.id !== channelId) return g;
+
+                let newUnread = g.unread_count || 0;
+                if (!isViewing && senderAddr !== myAddr) {
+                    newUnread += 1;
+                } else if (isViewing) {
+                    newUnread = 0;
+                }
+
+                return { ...g, last_message: msg, unread_count: newUnread };
+            });
+        });
+    };
+
+    const handleGroupManualDecrypt = async (msg) => {
+        try {
+            const payload = JSON.parse(msg.content);
+            if (payload.v === 2 && payload.sid) {
+                if (sessionKeysRef.current[payload.sid]) {
+                    const plainText = await decryptWithSessionKey(payload.ct, sessionKeysRef.current[payload.sid]);
+                    setActiveGroupConversation(prev => ({
+                        ...prev,
+                        messages: prev.messages.map(m => m.id === msg.id ? { ...m, plainText } : m)
+                    }));
+                    return;
+                }
+                const myAddr = user.address.toLowerCase();
+                if (payload.keys && payload.keys[myAddr]) {
+                    const sessionKey = await unwrapSessionKey(payload.keys[myAddr]);
+                    if (sessionKey) {
+                        setSessionKeys(prev => ({ ...prev, [payload.sid]: sessionKey }));
+                        const plainText = await decryptWithSessionKey(payload.ct, sessionKey);
+                        setActiveGroupConversation(prev => ({
+                            ...prev,
+                            messages: prev.messages.map(m => m.id === msg.id ? { ...m, plainText } : m)
+                        }));
+                    }
+                }
+            }
+        } catch (e) { console.error("Group manual decrypt failed", e); }
+    };
+
     return (
         <MessengerContext.Provider value={{
             conversations,
@@ -425,8 +906,22 @@ export const MessengerProvider = ({ children }) => {
             sendMessage,
             setActiveConversation,
             handleManualDecrypt,
-            unreadCount: conversations.reduce((acc, c) => acc + (c.unread_count || 0), 0),
-            lastEvent // Expose for listeners
+            unreadCount: conversations.reduce((acc, c) => acc + (c.unread_count || 0), 0) +
+                groupConversations.reduce((acc, g) => acc + (g.unread_count || 0), 0),
+            lastEvent,
+            // Group Channels
+            groupConversations,
+            activeGroupConversation,
+            setActiveGroupConversation,
+            createGroup,
+            loadGroupConversation,
+            sendGroupMessage,
+            fetchGroupConversations,
+            handleGroupManualDecrypt,
+            addGroupMember,
+            removeGroupMember,
+            updateGroupMemberRole,
+            updateGroup,
         }}>
             {children}
         </MessengerContext.Provider>

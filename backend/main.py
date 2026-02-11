@@ -4,7 +4,7 @@ from database import engine, Base
 import os
 
 # Routers
-from routers import auth, users, secrets, multisig, messenger
+from routers import auth, users, secrets, multisig, messenger, groups, notifications
 from dependencies import limiter
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -66,6 +66,8 @@ app.include_router(secrets.router)
 app.include_router(multisig.router)
 app.include_router(messenger.router)
 app.include_router(messenger.ws_router) # Include the WS router (root path /ws)
+app.include_router(groups.router)
+app.include_router(notifications.router)
 
 # Root/Health check (optional)
 @app.get("/")

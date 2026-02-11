@@ -145,3 +145,58 @@ class RecoveryShare(Base):
     google_id = Column(String, index=True, unique=True) # The 'sub' from Google ID Token
     share_data = Column(Text) # Encrypted share blob (Share B)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ── Group Channels ──────────────────────────────────────────────
+
+class GroupChannel(Base):
+    __tablename__ = "group_channels"
+
+    id = Column(String, primary_key=True)  # UUID (generated client-side)
+    name = Column(String, nullable=False)
+    owner_address = Column(String, ForeignKey("users.address"))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    owner = relationship("User")
+    members = relationship("GroupMember", back_populates="channel", cascade="all, delete-orphan")
+    messages = relationship("GroupMessage", back_populates="channel", cascade="all, delete-orphan")
+
+
+class GroupMember(Base):
+    __tablename__ = "group_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    channel_id = Column(String, ForeignKey("group_channels.id"), index=True)
+    user_address = Column(String, ForeignKey("users.address"))
+    role = Column(String, default="member")  # "owner" | "admin" | "member"
+    joined_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    channel = relationship("GroupChannel", back_populates="members")
+    user = relationship("User")
+
+
+class GroupMessage(Base):
+    __tablename__ = "group_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    channel_id = Column(String, ForeignKey("group_channels.id"), index=True)
+    sender_address = Column(String, ForeignKey("users.address"), index=True)
+    content = Column(Text)  # Encrypted blob (v2 payload)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    channel = relationship("GroupChannel", back_populates="messages")
+    sender = relationship("User")
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_address = Column(String, ForeignKey("users.address"), index=True)
+    endpoint = Column(Text, nullable=False)
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", back_populates="push_subscriptions")
+
+User.push_subscriptions = relationship("PushSubscription", back_populates="user", cascade="all, delete-orphan")

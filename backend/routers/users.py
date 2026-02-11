@@ -41,7 +41,7 @@ def get_user(address: str, db: Session = Depends(get_db)):
 
 @router.get("", response_model=List[schemas.UserResponse])
 @limiter.limit("30/minute")
-def list_users(request: Request, search: str = None, limit: int = 5, offset: int = 0, db: Session = Depends(get_db)):
+def list_users(request: Request, search: str = None, only_pqc: bool = False, limit: int = 5, offset: int = 0, db: Session = Depends(get_db)):
     if limit > 100:
         limit = 100
     query = db.query(models.User)
@@ -52,6 +52,13 @@ def list_users(request: Request, search: str = None, limit: int = 5, offset: int
             (models.User.address.like(search_pattern)) | 
             (models.User.username.like(search_pattern))
         )
+    
+    if only_pqc:
+        # PQC keys (Kyber/Dilithium) are significantly larger than ETH public keys (x25519/SECP256K1)
+        # Kyber768 PK is ~1088 bytes (hex ~2176), SECP256K1 is ~33 bytes (hex ~66).
+        # We use a safe threshold of 500 characters.
+        from sqlalchemy import func
+        query = query.filter(func.length(models.User.encryption_public_key) > 500)
     
     return query.limit(limit).offset(offset).all()
 

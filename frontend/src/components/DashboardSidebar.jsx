@@ -1,7 +1,9 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useMessenger } from '../hooks/useMessenger';
-import { Lock, FolderGit2 } from 'lucide-react';
+import { Lock, FolderGit2, Bell, BellOff } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 
 export default function DashboardSidebar({
     currentView,
@@ -14,6 +16,8 @@ export default function DashboardSidebar({
 }) {
     // Only this component will re-render when messenger events occur (typing, new message)
     const { unreadCount, lastEvent } = useMessenger();
+    const { authType } = useAuth();
+    const { permission, requestPermission } = useNotifications();
 
     // Listen for Real-time Events safely within this isolated component
     const lastProcessedEventId = React.useRef(null);
@@ -73,22 +77,24 @@ export default function DashboardSidebar({
                         )}
                     </NavLink>
                 ))}
-                {/* Messenger Tab */}
-                <NavLink
-                    to="/messenger"
-                    className={({ isActive }) =>
-                        `${baseLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`
-                    }
-                >
-                    <div className="flex items-center gap-3">
-                        <span className="text-lg">💬</span> Messenger
-                    </div>
-                    {unreadCount > 0 && (
-                        <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                            {unreadCount}
-                        </span>
-                    )}
-                </NavLink>
+                {/* Messenger Tab - Only for TrustKeys/PQC users */}
+                {authType !== 'metamask' && (
+                    <NavLink
+                        to="/messenger"
+                        className={({ isActive }) =>
+                            `${baseLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`
+                        }
+                    >
+                        <div className="flex items-center gap-3">
+                            <span className="text-lg">💬</span> Messenger
+                        </div>
+                        {unreadCount > 0 && (
+                            <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                {unreadCount}
+                            </span>
+                        )}
+                    </NavLink>
+                )}
             </nav>
 
             {/* Quick Stats or Info */}
@@ -103,6 +109,35 @@ export default function DashboardSidebar({
                         <span className="text-slate-500">Multisig</span>
                         <span className="font-medium text-slate-900 dark:text-white">{workflows.length}</span>
                     </div>
+                </div>
+            </div>
+
+            {/* Notification Status */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-bold text-slate-900 dark:text-white text-sm uppercase tracking-wider">Notifications</h4>
+                    {permission === 'granted' ? (
+                        <Bell className="w-4 h-4 text-emerald-500" />
+                    ) : (
+                        <BellOff className="w-4 h-4 text-amber-500" />
+                    )}
+                </div>
+                <div className="space-y-3">
+                    {permission === 'default' && (
+                        <button
+                            onClick={requestPermission}
+                            className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition-colors"
+                        >
+                            Enable Push
+                        </button>
+                    )}
+                    {permission === 'granted' ? (
+                        <p className="text-xs text-emerald-500 font-medium">Notifications Enabled</p>
+                    ) : permission === 'denied' ? (
+                        <p className="text-xs text-red-500 font-medium">Notifications Blocked</p>
+                    ) : (
+                        <p className="text-xs text-slate-500">Enable to stay updated in real-time.</p>
+                    )}
                 </div>
             </div>
         </div>
