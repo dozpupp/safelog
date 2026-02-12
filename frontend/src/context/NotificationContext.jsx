@@ -89,8 +89,30 @@ export const NotificationProvider = ({ children }) => {
         }
     };
 
+    const unsubscribe = useCallback(async () => {
+        if (!subscription) return;
+
+        try {
+            // Unsubscribe from backend first
+            await fetch(`${API_ENDPOINTS.NOTIFICATIONS.UNSUBSCRIBE}?endpoint=${encodeURIComponent(subscription.endpoint)}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+
+            // Unsubscribe from browser
+            await subscription.unsubscribe();
+
+            setSubscription(null);
+            // Permission remains 'granted' in browser, but we clear local subscription state
+        } catch (error) {
+            console.error('Failed to unsubscribe:', error);
+        }
+    }, [subscription]);
+
     return (
-        <NotificationContext.Provider value={{ permission, requestPermission, subscribe }}>
+        <NotificationContext.Provider value={{ permission, subscription, requestPermission, subscribe, unsubscribe }}>
             {children}
         </NotificationContext.Provider>
     );
