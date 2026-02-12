@@ -6,7 +6,7 @@ const NotificationContext = createContext();
 
 export const useNotifications = () => useContext(NotificationContext);
 
-const VAPID_PUBLIC_KEY = "BA4DL706bR_1iDyiOTfe52hp4U2_RKgn6KlrU4AiWSdXEvihmM1zS5B-TfYEG_41g-LaBLQ0YjNACz_hJ2d7kAo";
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "BA4DL706bR_1iDyiOTfe52hp4U2_RKgn6KlrU4AiWSdXEvihmM1zS5B-TfYEG_41g-LaBLQ0YjNACz_hJ2d7kAo";
 
 function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -36,6 +36,7 @@ export const NotificationProvider = ({ children }) => {
 
         try {
             const registration = await navigator.serviceWorker.ready;
+
             const existingSub = await registration.pushManager.getSubscription();
 
             if (existingSub) {
@@ -49,7 +50,8 @@ export const NotificationProvider = ({ children }) => {
 
             // Send to backend
             const subData = newSub.toJSON();
-            await fetch(API_ENDPOINTS.NOTIFICATIONS.SUBSCRIBE, {
+
+            const res = await fetch(API_ENDPOINTS.NOTIFICATIONS.SUBSCRIBE, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -61,6 +63,10 @@ export const NotificationProvider = ({ children }) => {
                     auth: subData.keys.auth
                 })
             });
+
+            if (!res.ok) {
+                throw new Error(`Backend error: ${res.status}`);
+            }
 
             setSubscription(newSub);
             setPermission(Notification.permission);
