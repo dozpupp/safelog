@@ -17,7 +17,7 @@ export default function DashboardSidebar({
     // Only this component will re-render when messenger events occur (typing, new message)
     const { unreadCount, lastEvent } = useMessenger();
     const { authType } = useAuth();
-    const { permission, requestPermission } = useNotifications();
+    const { permission, subscription, requestPermission, unsubscribe } = useNotifications();
 
     // Listen for Real-time Events safely within this isolated component
     const lastProcessedEventId = React.useRef(null);
@@ -131,8 +131,26 @@ export default function DashboardSidebar({
                             Enable Push
                         </button>
                     )}
-                    {permission === 'granted' ? (
-                        <p className="text-xs text-emerald-500 font-medium">Notifications Enabled</p>
+                    {permission === 'granted' && subscription ? (
+                        <div className="space-y-2">
+                            <p className="text-xs text-emerald-500 font-medium">Notifications Enabled</p>
+                            <button
+                                onClick={unsubscribe}
+                                className="w-full py-2 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-medium transition-colors"
+                            >
+                                Disable Push
+                            </button>
+                        </div>
+                    ) : permission === 'granted' ? (
+                        <div className="space-y-2">
+                            <p className="text-xs text-slate-500">Permission granted but not subscribed.</p>
+                            <button
+                                onClick={requestPermission} // Re-run subscribe logic
+                                className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition-colors"
+                            >
+                                Enable Push
+                            </button>
+                        </div>
                     ) : permission === 'denied' ? (
                         <p className="text-xs text-red-500 font-medium">Notifications Blocked</p>
                     ) : (
