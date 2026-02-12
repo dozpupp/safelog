@@ -27,10 +27,21 @@ export const NotificationProvider = ({ children }) => {
     const { user, isAuthenticated } = useAuth();
     const [permission, setPermission] = useState(Notification.permission);
     const [subscription, setSubscription] = useState(null);
+    const [error, setError] = useState(null);
 
     const subscribe = useCallback(async () => {
+        setError(null);
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-            console.warn('Push messaging is not supported');
+            const msg = 'Push messaging is not supported in this browser.';
+            console.warn(msg);
+            setError(msg);
+            return;
+        }
+
+        if (!window.isSecureContext) {
+            const msg = 'Push notifications require a secure context (HTTPS) or localhost.';
+            console.warn(msg);
+            setError(msg);
             return;
         }
 
@@ -50,7 +61,6 @@ export const NotificationProvider = ({ children }) => {
 
             // Send to backend
             const subData = newSub.toJSON();
-
             const res = await fetch(API_ENDPOINTS.NOTIFICATIONS.SUBSCRIBE, {
                 method: 'POST',
                 headers: {
@@ -65,21 +75,29 @@ export const NotificationProvider = ({ children }) => {
             });
 
             if (!res.ok) {
-                throw new Error(`Backend error: ${res.status}`);
+                throw new Error(`Server returned ${res.status} when saving subscription.`);
             }
 
             setSubscription(newSub);
             setPermission(Notification.permission);
         } catch (error) {
             console.error('Failed to subscribe to push notifications:', error);
+            setError(error.message || 'Failed to subscribe.');
         }
     }, []);
 
     useEffect(() => {
         if (isAuthenticated && permission === 'granted') {
-            subscribe();
+            // Check if we already have a subscription on mount
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.ready.then(reg => {
+                    reg.pushManager.getSubscription().then(sub => {
+                        if (sub) setSubscription(sub);
+                    });
+                });
+            }
         }
-    }, [isAuthenticated, permission, subscribe]);
+    }, [isAuthenticated, permission]);
 
     const requestPermission = async () => {
         const result = await Notification.requestPermission();
@@ -91,6 +109,7 @@ export const NotificationProvider = ({ children }) => {
 
     const unsubscribe = useCallback(async () => {
         if (!subscription) return;
+        setError(null);
 
         try {
             // Unsubscribe from backend first
@@ -108,11 +127,12 @@ export const NotificationProvider = ({ children }) => {
             // Permission remains 'granted' in browser, but we clear local subscription state
         } catch (error) {
             console.error('Failed to unsubscribe:', error);
+            setError('Failed to unsubscribe.');
         }
     }, [subscription]);
 
     return (
-        <NotificationContext.Provider value={{ permission, subscription, requestPermission, subscribe, unsubscribe }}>
+        <NotificationContext.Provider value={{ permission, subscription, error, requestPermission, subscribe, unsubscribe }}>
             {children}
         </NotificationContext.Provider>
     );
