@@ -17,7 +17,7 @@ export default function DashboardSidebar({
     // Only this component will re-render when messenger events occur (typing, new message)
     const { unreadCount, lastEvent } = useMessenger();
     const { authType } = useAuth();
-    const { permission, subscription, requestPermission, unsubscribe } = useNotifications();
+    const { permission, subscription, error, requestPermission, unsubscribe } = useNotifications();
 
     // Listen for Real-time Events safely within this isolated component
     const lastProcessedEventId = React.useRef(null);
@@ -155,6 +155,12 @@ export default function DashboardSidebar({
                         <p className="text-xs text-red-500 font-medium">Notifications Blocked</p>
                     ) : (
                         <p className="text-xs text-slate-500">Enable to stay updated in real-time.</p>
+                    )}
+
+                    {error && (
+                        <p className="text-xs text-red-500 mt-2 border-t pt-2 border-slate-200 dark:border-slate-700">
+                            {error}
+                        </p>
                     )}
                 </div>
             </div>
